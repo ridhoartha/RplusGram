@@ -4,6 +4,8 @@ apply plugin: 'com.android.library'
 apply plugin: 'org.telegram.build-plugin'
 apply plugin: 'idea'
 
+def rplusFastDebug = project.hasProperty('rplusFastDebug') && project.property('rplusFastDebug').toString().toBoolean()
+
 idea {
     module {
         excludeDirs += [
@@ -155,7 +157,14 @@ android {
         externalNativeBuild {
             cmake {
                 version '3.22.1'
-                arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-23' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+                def cmakeArguments = ['-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-23']
+                if (rplusFastDebug) {
+                    cmakeArguments += [
+                        '-DCMAKE_C_COMPILER_LAUNCHER=ccache',
+                        '-DCMAKE_CXX_COMPILER_LAUNCHER=ccache'
+                    ]
+                }
+                arguments(*cmakeArguments)
                 targets 'tmessages.49', 'twidget'
             }
         }
@@ -163,10 +172,10 @@ android {
 
     buildTypes {
         debug {
-            jniDebuggable true
+            jniDebuggable = !rplusFastDebug
             shrinkResources false
             multiDexEnabled true
-            ndk.debugSymbolLevel = 'FULL'
+            ndk.debugSymbolLevel = rplusFastDebug ? 'SYMBOL_TABLE' : 'FULL'
             buildConfigField "String", "BUILD_VERSION_STRING", "\"" + APP_VERSION_NAME + "\""
             buildConfigField "String", "BETA_URL", "\"" + getProps("BETA_PRIVATE_URL") + "\""
             buildConfigField "boolean", "DEBUG_VERSION", "true"

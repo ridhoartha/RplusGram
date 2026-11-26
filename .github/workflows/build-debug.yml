@@ -1,7 +1,22 @@
-name: Build debug APK
+name: Build R+ Gram APK
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Target perangkat"
+        required: true
+        default: "x86_64"
+        type: choice
+        options:
+          - x86_64
+          - arm64-v8a
+          - universal
+      publish_release:
+        description: "Upload APK sebagai file langsung di GitHub Releases"
+        required: true
+        default: true
+        type: boolean
   push:
     branches:
       - rplusgram-dev
@@ -11,15 +26,21 @@ on:
       - "handoffs/**"
 
 permissions:
-  contents: read
+  contents: write
+
+env:
+  BUILD_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'x86_64' }}
+  PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release || false }}
+  CCACHE_DIR: ${{ runner.temp }}/ccache
+  CCACHE_MAXSIZE: 2G
 
 concurrency:
-  group: build-debug-${{ github.ref }}
+  group: build-rplusgram-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.target || 'x86_64' }}
   cancel-in-progress: true
 
 jobs:
   build-debug:
-    name: Build afat debug
+    name: Build ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'x86_64' }} debug
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -40,10 +61,28 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Install Android SDK components
+      - name: Cache Android NDK and CMake
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
+            ${{ env.ANDROID_HOME }}/cmake/3.22.1
+          key: android-toolchain-${{ runner.os }}-ndk-27.2.12479018-cmake-3.22.1
+
+      - name: Cache native compiler
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ env.BUILD_TARGET }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ env.BUILD_TARGET }}-
+
+      - name: Install build tools and Android SDK components
         shell: bash
         run: |
           set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y ccache
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
           yes | "${SDKMANAGER}" --licenses >/dev/null || true
           "${SDKMANAGER}" \
@@ -51,6 +90,16 @@ jobs:
             "build-tools;36.0.0" \
             "ndk;27.2.12479018" \
             "cmake;3.22.1"
+
+      - name: Configure ccache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$CCACHE_DIR"
+          ccache --max-size="$CCACHE_MAXSIZE"
+          ccache --set-config=compression=true
+          ccache --set-config=base_dir="$GITHUB_WORKSPACE"
+          ccache --show-stats
 
       - name: Show toolchain
         shell: bash
@@ -61,13 +110,20 @@ jobs:
       - name: Build debug APK
         shell: bash
         run: |
+          set -euo pipefail
+          gradle_target_args=("-PrplusFastDebug=true")
+          if [[ "$BUILD_TARGET" != "universal" ]]; then
+            gradle_target_args+=("-PrplusTargetAbi=${BUILD_TARGET}")
+          fi
+
           set +e
           ./gradlew \
             --no-daemon \
+            --build-cache \
             --stacktrace \
             --console=plain \
             -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g" \
-            :TMessagesProj_App:compileAfatDebugJavaWithJavac \
+            "${gradle_target_args[@]}" \
             :TMessagesProj_App:assembleAfatDebug 2>&1 | tee "$RUNNER_TEMP/gradle-build.log"
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
@@ -79,19 +135,95 @@ jobs:
             exit "$status"
           fi
 
-      - name: List APK
+      - name: Prepare APK
+        id: package
         if: success()
         shell: bash
         run: |
-          find TMessagesProj_App/build/outputs/apk -type f -name '*.apk' \
-            -printf '%p %s bytes\n'
-          sha256sum TMessagesProj_App/build/outputs/apk/afat/debug/*.apk
+          set -euo pipefail
+          mapfile -d '' apk_files < <(
+            find TMessagesProj_App/build/outputs/apk/afat/debug -type f -name '*.apk' -print0
+          )
+          if [[ "${#apk_files[@]}" -ne 1 ]]; then
+            echo "Diharapkan tepat satu APK, ditemukan ${#apk_files[@]}." >&2
+            printf '%s\n' "${apk_files[@]}" >&2
+            exit 1
+          fi
+
+          short_sha="${GITHUB_SHA::7}"
+          apk_path="${RUNNER_TEMP}/RPlusGram-beta-${BUILD_TARGET}-${short_sha}.apk"
+          cp "${apk_files[0]}" "$apk_path"
+          apk_size="$(stat -c '%s' "$apk_path")"
+          apk_sha256="$(sha256sum "$apk_path" | cut -d ' ' -f 1)"
+
+          echo "apk_path=$apk_path" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$(basename "$apk_path")" >> "$GITHUB_OUTPUT"
+          echo "apk_size=$apk_size" >> "$GITHUB_OUTPUT"
+          echo "apk_sha256=$apk_sha256" >> "$GITHUB_OUTPUT"
+          echo "$apk_sha256  $(basename "$apk_path")" > "${RUNNER_TEMP}/RPlusGram-beta.apk.sha256"
 
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: rplusgram-debug-${{ github.sha }}
-          path: TMessagesProj_App/build/outputs/apk/afat/debug/*.apk
+          name: rplusgram-${{ env.BUILD_TARGET }}-${{ github.sha }}
+          path: ${{ steps.package.outputs.apk_path }}
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish direct APK to GitHub Releases
+        id: publish
+        if: success() && env.PUBLISH_RELEASE == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA::7}"
+          tag="rplusgram-beta-${short_sha}-${BUILD_TARGET}"
+          asset="${{ steps.package.outputs.apk_path }}"
+          notes="${RUNNER_TEMP}/rplusgram-release-notes.md"
+
+          {
+            echo "Build debug R+ Gram untuk pengujian."
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Target: \`${BUILD_TARGET}\`"
+            echo "- SHA-256: \`${{ steps.package.outputs.apk_sha256 }}\`"
+            echo
+            echo "Gunakan akun Telegram uji. Jangan gunakan akun utama."
+          } > "$notes"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$asset" --clobber
+          else
+            gh release create "$tag" "$asset" \
+              --title "R+ Gram Beta ${short_sha} (${BUILD_TARGET})" \
+              --notes-file "$notes" \
+              --prerelease
+          fi
+
+          release_url="$(gh release view "$tag" --json url --jq .url)"
+          echo "release_url=$release_url" >> "$GITHUB_OUTPUT"
+
+      - name: Write build summary
+        if: success()
+        shell: bash
+        env:
+          RELEASE_URL: ${{ steps.publish.outputs.release_url }}
+        run: |
+          set -euo pipefail
+          apk_mb="$(( ${{ steps.package.outputs.apk_size }} / 1024 / 1024 ))"
+          {
+            echo "### R+ Gram Beta siap"
+            echo
+            echo "- APK: \`${{ steps.package.outputs.apk_name }}\`"
+            echo "- Target: \`${BUILD_TARGET}\`"
+            echo "- Ukuran: ${apk_mb} MB"
+            echo "- SHA-256: \`${{ steps.package.outputs.apk_sha256 }}\`"
+            if [[ -n "${RELEASE_URL:-}" ]]; then
+              echo "- [Download APK langsung](${RELEASE_URL})"
+            else
+              echo "- Download dari artifact build ini (GitHub membungkus artifact dalam ZIP)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

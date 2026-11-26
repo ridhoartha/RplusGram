@@ -1,6 +1,14 @@
 apply plugin: 'com.android.application'
 apply plugin: 'org.telegram.build-app-plugin'
 
+def rplusFastDebug = project.hasProperty('rplusFastDebug') && project.property('rplusFastDebug').toString().toBoolean()
+def rplusAllAbis = ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']
+def rplusTargetAbi = project.findProperty('rplusTargetAbi')?.toString()?.trim()
+def rplusAbis = rplusTargetAbi ? [rplusTargetAbi] : rplusAllAbis
+if (rplusTargetAbi && !rplusAllAbis.contains(rplusTargetAbi)) {
+    throw new GradleException("Unsupported rplusTargetAbi: ${rplusTargetAbi}")
+}
+
 repositories {
     mavenCentral()
     google()
@@ -71,14 +79,14 @@ android {
     buildTypes {
         debug {
             debuggable true
-            jniDebuggable true
+            jniDebuggable = !rplusFastDebug
             signingConfig signingConfigs.debug
             applicationIdSuffix ".beta"
             minifyEnabled false
             shrinkResources false
             multiDexEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), '../TMessagesProj/proguard-rules.pro'
-            ndk.debugSymbolLevel = 'FULL'
+            ndk.debugSymbolLevel = rplusFastDebug ? 'SYMBOL_TABLE' : 'FULL'
         }
 
         standalone {
@@ -122,7 +130,7 @@ android {
     productFlavors {
         bundleAfat {
             ndk {
-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+                abiFilters(*rplusAbis)
             }
             ext {
                 abiVersionCode = 1
@@ -131,7 +139,7 @@ android {
         }
         afat {
             ndk {
-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+                abiFilters(*rplusAbis)
             }
             sourceSets.debug {
                 manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
@@ -178,7 +186,14 @@ android {
         externalNativeBuild {
             cmake {
                 version '3.22.1'
-                arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-23' // , '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+                def cmakeArguments = ['-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-23']
+                if (rplusFastDebug) {
+                    cmakeArguments += [
+                        '-DCMAKE_C_COMPILER_LAUNCHER=ccache',
+                        '-DCMAKE_CXX_COMPILER_LAUNCHER=ccache'
+                    ]
+                }
+                arguments(*cmakeArguments)
                 targets 'tmessages.49', 'twidget'
             }
         }
