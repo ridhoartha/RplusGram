@@ -66,6 +66,7 @@ jobs:
             --stacktrace \
             --console=plain \
             -Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=1g" \
+            :TMessagesProj_App:compileAfatDebugJavaWithJavac \
             :TMessagesProj_App:assembleAfatDebug
 
       - name: List APK

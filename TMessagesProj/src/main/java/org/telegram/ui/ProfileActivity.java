@@ -167,6 +167,7 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.rplus.RPlusStore;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
@@ -365,6 +366,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private SearchAdapter searchAdapter;
     /** The name: one view in every state, it moves from the header of the chat while the profile opens. */
     private SimpleTextView nameTextView;
+    private ImageView rplusBlacklistButton;
     private String nameTextViewRightDrawableContentDescription = null;
     private String nameTextViewRightDrawable2ContentDescription = null;
     /** The status under the name, or the description of the photo while the avatar is expanded. */
@@ -5529,6 +5531,21 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         nameTextView.setFocusable(true);
         nameTextView.setEllipsizeByGradient(true);
         avatarContainer2.addView(nameTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.TOP, 109, -6, 0, 0));
+
+        rplusBlacklistButton = new ImageView(context);
+        rplusBlacklistButton.setScaleType(ImageView.ScaleType.CENTER);
+        rplusBlacklistButton.setImageResource(R.drawable.msg_block);
+        rplusBlacklistButton.setColorFilter(0xff9a6bff, PorterDuff.Mode.SRC_IN);
+        rplusBlacklistButton.setContentDescription("Blacklist broadcast R+");
+        android.graphics.drawable.GradientDrawable rplusBlacklistBackground = new android.graphics.drawable.GradientDrawable();
+        rplusBlacklistBackground.setColor(Theme.isCurrentThemeDark() ? 0x332f1d48 : 0x22eadfff);
+        rplusBlacklistBackground.setCornerRadius(dp(14));
+        rplusBlacklistButton.setBackground(rplusBlacklistBackground);
+        rplusBlacklistButton.setPadding(dp(5), dp(5), dp(5), dp(5));
+        rplusBlacklistButton.setVisibility(View.GONE);
+        rplusBlacklistButton.setOnClickListener(v -> blacklistCurrentProfileForRPlus());
+        avatarContainer2.addView(rplusBlacklistButton, LayoutHelper.createFrame(28, 28, Gravity.LEFT | Gravity.TOP, 109, -2, 0, 0));
+        nameTextView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> updateRPlusBlacklistButtonPosition());
 
         onlineTextView = new AnimatedClickableSmallTextView(context) {
             @Override
@@ -12148,6 +12165,67 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
 
         needLayout(true);
+        updateRPlusBlacklistButton();
+    }
+
+    private void updateRPlusBlacklistButton() {
+        if (rplusBlacklistButton == null || nameTextView == null || getMessagesController() == null) {
+            return;
+        }
+        long dialogId = getDialogId();
+        boolean visible = false;
+        if (dialogId > 0) {
+            TLRPC.User user = getMessagesController().getUser(dialogId);
+            visible = user != null
+                && !user.bot
+                && !user.support
+                && !user.deleted
+                && dialogId != getUserConfig().getClientUserId()
+                && !RPlusStore.isUserBlacklisted(currentAccount, dialogId);
+        } else if (dialogId < 0) {
+            TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
+            visible = chat != null
+                && (!ChatObject.isChannel(chat) || chat.megagroup)
+                && !RPlusStore.isGroupBlacklisted(currentAccount, dialogId);
+        }
+        rplusBlacklistButton.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (visible) {
+            updateRPlusBlacklistButtonPosition();
+        }
+    }
+
+    private void updateRPlusBlacklistButtonPosition() {
+        if (rplusBlacklistButton == null || nameTextView == null) {
+            return;
+        }
+        ViewGroup.LayoutParams layoutParams = rplusBlacklistButton.getLayoutParams();
+        if (layoutParams instanceof FrameLayout.LayoutParams) {
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) layoutParams;
+            lp.leftMargin = 109 + nameTextView.getMeasuredWidth() + dp(8);
+            lp.topMargin = -2;
+            rplusBlacklistButton.setLayoutParams(lp);
+        }
+    }
+
+    private void blacklistCurrentProfileForRPlus() {
+        long dialogId = getDialogId();
+        if (dialogId > 0) {
+            TLRPC.User user = getMessagesController().getUser(dialogId);
+            if (user != null) {
+                String name = UserObject.getUserName(user);
+                RPlusStore.setUserBlacklisted(currentAccount, dialogId, name, true);
+                rplusBlacklistButton.setVisibility(View.GONE);
+                BulletinFactory.of(this).createSuccessBulletin(name + " ditambahkan ke blacklist Ucast").show();
+            }
+        } else if (dialogId < 0) {
+            TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
+            if (chat != null) {
+                String name = DialogObject.getDialogTitle(chat);
+                RPlusStore.setGroupBlacklisted(currentAccount, dialogId, name, true);
+                rplusBlacklistButton.setVisibility(View.GONE);
+                BulletinFactory.of(this).createSuccessBulletin(name + " ditambahkan ke blacklist Gcast").show();
+            }
+        }
     }
 
     private CharSequence appendCommunityHiddenRow(CharSequence text) {
