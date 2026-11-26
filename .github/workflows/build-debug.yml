@@ -31,7 +31,7 @@ permissions:
 env:
   BUILD_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'x86_64' }}
   PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release || false }}
-  CCACHE_DIR: ${{ runner.temp }}/ccache
+  CCACHE_DIR: /home/runner/.ccache
   CCACHE_MAXSIZE: 2G
 
 concurrency:
