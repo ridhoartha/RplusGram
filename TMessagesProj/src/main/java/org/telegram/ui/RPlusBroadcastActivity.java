@@ -38,7 +38,6 @@ import org.telegram.messenger.rplus.RPlusScheduleManager;
 import org.telegram.messenger.rplus.RPlusStore;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.AlertDialog;
-import org.telegram.ui.ActionBar.BasePermissionsActivity;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.ChatActivityEnterView;
 

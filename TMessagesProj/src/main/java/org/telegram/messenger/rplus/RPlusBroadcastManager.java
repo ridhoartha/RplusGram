@@ -342,7 +342,7 @@ public final class RPlusBroadcastManager {
     public static TargetSnapshot buildTargets(int account, int mode) {
         TargetSnapshot snapshot = new TargetSnapshot();
         ArrayList<TLRPC.Dialog> dialogs = new ArrayList<>(MessagesController.getInstance(account).getAllDialogs());
-        Collections.sort(dialogs, (a, b) -> Integer.compare(b.date, a.date));
+        Collections.sort(dialogs, (a, b) -> Integer.compare(b.last_message_date, a.last_message_date));
         LongSparseArray<RPlusTarget> unique = new LongSparseArray<>();
         long selfId = UserConfig.getInstance(account).getClientUserId();
 
@@ -371,7 +371,7 @@ public final class RPlusBroadcastManager {
                     RPlusTarget target = new RPlusTarget();
                     target.dialogId = dialogId;
                     target.name = DialogObject.getDialogTitle(chat);
-                    target.date = dialog.date;
+                    target.date = dialog.last_message_date;
                     unique.put(dialogId, target);
                 }
             } else {
@@ -390,7 +390,7 @@ public final class RPlusBroadcastManager {
                     RPlusTarget target = new RPlusTarget();
                     target.dialogId = dialogId;
                     target.name = UserObject.getUserName(user);
-                    target.date = dialog.date;
+                    target.date = dialog.last_message_date;
                     unique.put(dialogId, target);
                 }
             }
