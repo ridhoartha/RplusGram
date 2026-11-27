@@ -35,6 +35,7 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaDataController;
@@ -358,8 +359,8 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         LinearLayout broadcastCard = newCard();
         broadcastCard.addView(buildRow(
             R.drawable.msg_groups,
-            "Broadcast grup",
-            "Kirim ke semua grup yang Anda ikuti",
+            "Broadcast grup & channel",
+            "Grup dan channel tempat Anda bisa mengirim",
             null,
             true,
             () -> openComposer(RPlusStore.MODE_GCAST)
@@ -596,7 +597,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
             RPlusBroadcastManager.buildTargets(currentAccount, composerMode);
 
         setActionBar(
-            isGroup ? "Broadcast grup" : "Broadcast pengguna",
+            isGroup ? "Broadcast grup & channel" : "Broadcast pengguna",
             snapshot.targets.size() + " target"
         );
 
@@ -717,7 +718,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         info.setOrientation(LinearLayout.VERTICAL);
 
         targetSummaryView = text(
-            snapshot.targets.size() + (isGroup ? " grup" : " pengguna"),
+            snapshot.targets.size() + (isGroup ? " grup & channel" : " pengguna"),
             16,
             color(Theme.key_windowBackgroundWhiteBlackText)
         );
@@ -737,13 +738,28 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         if (detail.length() == 0) {
             detail.append(snapshot.targets.isEmpty()
                 ? (isGroup
-                    ? "Belum ada grup yang bisa dijangkau. Ikuti grup terlebih dahulu."
+                    ? "Belum ada grup/channel yang bisa dijangkau. Ikuti grup atau pastikan Anda punya hak posting di channel."
                     : "Belum ada chat pengguna yang bisa dijangkau.")
                 : "Siap dikirim");
         }
         TextView detailView = text(detail, 14, color(Theme.key_windowBackgroundWhiteGrayText2));
         detailView.setPadding(0, dp(2), 0, 0);
         info.addView(detailView);
+
+        if (snapshot.targets.isEmpty()) {
+            TextView reload = textButton("Muat ulang target", accent(), () -> {
+                saveDraftSilently();
+                showScreen(currentScreen);
+            });
+            reload.setGravity(Gravity.START);
+            reload.setPadding(0, 0, 0, 0);
+            LinearLayout.LayoutParams reloadParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(40)
+            );
+            reloadParams.topMargin = dp(4);
+            info.addView(reload, reloadParams);
+        }
 
         card.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         return card;
@@ -996,7 +1012,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
             notifyMessage("Tidak ada target yang bisa dijangkau", true);
             return;
         }
-        String unit = composerMode == RPlusStore.MODE_GCAST ? "grup" : "pengguna";
+        String unit = composerMode == RPlusStore.MODE_GCAST ? "grup/channel" : "pengguna";
         hideKeyboard();
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Mulai broadcast?");
@@ -1021,7 +1037,20 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
                 RPlusStore.encodeEntities(entities)
             );
             if (started) {
+                final long requestedAt = System.currentTimeMillis();
                 showScreen(SCREEN_HOME);
+                if (rootView != null) {
+                    rootView.postDelayed(() -> {
+                        if (!isFinishing()
+                            && !broadcastManager.isRunning()
+                            && broadcastManager.getStartedAt() < requestedAt) {
+                            notifyMessage(
+                                "Broadcast tidak dimulai. Periksa notifikasi atau target.",
+                                true
+                            );
+                        }
+                    }, 3000);
+                }
             } else {
                 notifyMessage("Layanan broadcast tidak dapat dimulai", true);
             }
@@ -1209,7 +1238,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         info.setOrientation(LinearLayout.VERTICAL);
 
         TextView title = text(
-            schedule.mode == RPlusStore.MODE_GCAST ? "Broadcast grup" : "Broadcast pengguna",
+            schedule.mode == RPlusStore.MODE_GCAST ? "Broadcast grup & channel" : "Broadcast pengguna",
             16,
             color(Theme.key_windowBackgroundWhiteBlackText)
         );
@@ -1251,7 +1280,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         topRow.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView title = text(
-            item.mode == RPlusStore.MODE_GCAST ? "Broadcast grup" : "Broadcast pengguna",
+            item.mode == RPlusStore.MODE_GCAST ? "Broadcast grup & channel" : "Broadcast pengguna",
             16,
             color(Theme.key_windowBackgroundWhiteBlackText)
         );
@@ -1646,6 +1675,13 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
             Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/spambot"));
             startActivity(intent);
         });
+        if (BuildVars.DEBUG_VERSION) {
+            builder.setNeutralButton("Reset uji", (dialog, which) -> {
+                RPlusStore.clearLimitLock(currentAccount);
+                notifyMessage("Status limit lokal direset", false);
+                showScreen(SCREEN_HOME);
+            });
+        }
         builder.setNegativeButton(LocaleController.getString(R.string.Close), null);
         builder.show();
     }

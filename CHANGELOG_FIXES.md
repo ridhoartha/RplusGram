@@ -1,6 +1,12 @@
 # R+ Gram — Catatan Perbaikan
 
 <!-- ENTRI BARU DI BAWAH BARIS INI -->
+### Fix #5 — Swipe Handle, Channel Targets and Broadcast Diagnostics
+
+| Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-28 | `RPlusPanelLauncher.java`, `RPlusBroadcastManager.java`, `RPlusBroadcastActivity.java`, `ProfileActivity.java` | Tombol FAB R+ terlihat seperti komponen custom; akun yang isinya channel melihat 0 target GCAST; kegagalan start tidak selalu terlihat; cek jaringan bisa memblokir broadcast secara palsu. | GCAST mengecualikan channel; target dihitung sekali saat composer dibuka; start failure hanya lewat notifikasi service; precheck `isNetworkOnline` bisa false. | Handle geser di tepi kanan (drag/tap) menggantikan FAB; channel dengan hak posting ikut target; tombol “Muat ulang target”; cek 3 detik setelah start; reset lock khusus debug; logging target/kirim/error; precheck jaringan dihapus dan mengandalkan error transport. | Compile lokal terakhir timeout karena mesin; compile sebelumnya sukses dan CI arm64 `638f638` sukses. Build CI berikutnya pending. | Target harus mencakup semua jenis chat yang benar-benar bisa dikirimi; kegagalan start harus punya umpan balik di layar. | `canPost`, `requestInFlight`, `Muat ulang target`, `RPlus send` | ⏳ CI NEXT • MANUAL TEST |
+
 ### Fix #4 — Broadcast Backend Hardening: Pipeline, Target Order, FGS and Exact Alarms
 
 | Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |

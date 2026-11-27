@@ -7,9 +7,10 @@ Centang setiap baris; jika gagal, catat perangkat, versi Android, dan langkah re
 
 - [ ] `./gradlew :TMessagesProj_App:assembleAfatDebug` berhasil tanpa error.
 - [ ] APK terpasang di perangkat/emulator.
-- [ ] FAB `R+` muncul di kanan tengah setelah login.
-- [ ] FAB tidak muncul saat app lock aktif.
-- [ ] Menekan FAB membuka layar **R+ Gram / Pusat broadcast**.
+- [ ] Handle geser R+ muncul di tepi kanan setelah login (bukan tombol bulat).
+- [ ] Handle tidak muncul saat app lock aktif.
+- [ ] Tap handle membuka layar **R+ Gram / Pusat broadcast**.
+- [ ] Drag handle ke kiri membuka layar yang sama.
 - [ ] Tombol back ActionBar dan gesture back sama-sama berfungsi.
 
 ## 2. Tema & tampilan
@@ -26,7 +27,8 @@ Centang setiap baris; jika gagal, catat perangkat, versi Android, dan langkah re
 ## 3. Home
 
 - [ ] Kartu akun menampilkan nama dan username yang benar.
-- [ ] Baris **Broadcast grup** membuka composer GCAST.
+- [ ] Baris **Broadcast grup & channel** membuka composer GCAST.
+- [ ] Channel tempat Anda punya hak posting ikut terhitung sebagai target.
 - [ ] Baris **Broadcast pengguna** membuka composer UCAST.
 - [ ] Baris **Blacklist** menampilkan jumlah entri.
 - [ ] Baris **Riwayat** dan **Pesan** membuka layar yang benar.
@@ -56,6 +58,8 @@ Centang setiap baris; jika gagal, catat perangkat, versi Android, dan langkah re
 - [ ] Setelah jaringan putus, status menjadi "Koneksi terputus"; setelah kembali dan Lanjutkan, target yang sama di-retry tanpa duplikat.
 - [ ] Saat FLOOD_WAIT, tombol Lanjutkan berubah menjadi "Tunggu" dan aktif lagi setelah lock berakhir.
 - [ ] UCAST memakai 500 chat terbaru (bukan 500 ID terkecil).
+- [ ] Jika target 0, tombol **Muat ulang target** tersedia dan menghitung ulang.
+- [ ] Setelah start, jika service gagal, peringatan muncul dalam ±3 detik.
 
 ## 5. Blacklist
 

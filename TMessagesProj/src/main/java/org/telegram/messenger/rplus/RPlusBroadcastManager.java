@@ -5,7 +5,6 @@ import android.text.TextUtils;
 import androidx.collection.LongSparseArray;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
@@ -168,20 +167,6 @@ public final class RPlusBroadcastManager {
             notifyListeners();
         }
 
-        if (!ApplicationLoader.isNetworkOnline()) {
-            synchronized (this) {
-                if (runGeneration != generation || !running) {
-                    return;
-                }
-                index = targetIndex;
-                currentTarget = null;
-                paused = true;
-                pauseReason = "Menunggu koneksi internet";
-                notifyListeners();
-            }
-            return;
-        }
-
         TLRPC.InputPeer inputPeer;
         try {
             inputPeer = MessagesController.getInstance(currentAccount).getInputPeer(target.dialogId);
@@ -195,6 +180,7 @@ public final class RPlusBroadcastManager {
             return;
         }
 
+        FileLog.d("RPlus send -> " + target.name);
         TLRPC.TL_messages_sendMessage request = new TLRPC.TL_messages_sendMessage();
         request.peer = inputPeer;
         request.message = text;
@@ -219,6 +205,7 @@ public final class RPlusBroadcastManager {
                     requestInFlight = false;
                 }
                 if (error != null) {
+                    FileLog.d("RPlus error " + error.text + " -> " + target.name);
                     handleSendError(error, targetIndex, randomId, runGeneration);
                     return;
                 }
@@ -236,6 +223,7 @@ public final class RPlusBroadcastManager {
                     sent++;
                     currentTarget = null;
                 }
+                FileLog.d("RPlus sent -> " + target.name);
                 notifyListeners();
                 scheduleNext();
             }), null, ConnectionsManager.RequestFlagDoNotWaitFloodWait | ConnectionsManager.RequestFlagCanCompress | ConnectionsManager.RequestFlagInvokeAfter);
@@ -266,6 +254,7 @@ public final class RPlusBroadcastManager {
             }
             requestInFlight = false;
             if (transportError) {
+                FileLog.d("RPlus transport error -> " + (errorObject != null ? errorObject.text : "null"));
                 // Transport error/timeout: retry the same target with the same random_id
                 // instead of burning through the list or creating a duplicate.
                 index = targetIndex;
@@ -490,10 +479,14 @@ public final class RPlusBroadcastManager {
                     continue;
                 }
                 TLRPC.Chat chat = MessagesController.getInstance(account).getChat(-dialogId);
-                if (chat == null || ChatObject.isNotInChat(chat)
-                    || ChatObject.isChannel(chat) && !chat.megagroup
-                    || chat.deactivated
-                    || !ChatObject.canSendPlain(chat)) {
+                if (chat == null || ChatObject.isNotInChat(chat) || chat.deactivated) {
+                    snapshot.unavailable++;
+                    continue;
+                }
+                boolean canWrite = ChatObject.isChannel(chat) && !chat.megagroup
+                    ? ChatObject.canPost(chat)
+                    : ChatObject.canSendPlain(chat);
+                if (!canWrite) {
                     snapshot.unavailable++;
                     continue;
                 }

@@ -12185,7 +12185,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         } else if (dialogId < 0) {
             TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
             visible = chat != null
-                && (!ChatObject.isChannel(chat) || chat.megagroup)
+                && (ChatObject.isChannel(chat) && !chat.megagroup
+                    ? ChatObject.canPost(chat)
+                    : ChatObject.canSendPlain(chat))
                 && !RPlusStore.isGroupBlacklisted(currentAccount, dialogId);
         }
         rplusBlacklistButton.setVisibility(visible ? View.VISIBLE : View.GONE);
