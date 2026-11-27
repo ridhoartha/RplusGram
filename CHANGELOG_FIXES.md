@@ -1,6 +1,18 @@
 # R+ Gram — Catatan Perbaikan
 
 <!-- ENTRI BARU DI BAWAH BARIS INI -->
+### Fix #3 — Broadcast Runtime Hardening: Predictive Back, Service Guard, FAB Lifecycle
+
+| Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-28 | `RPlusBroadcastActivity.java`, `RPlusBroadcastService.java`, `RPlusPanelLauncher.java` | Back gesture Android 13+ tidak konsisten; aksi pause/resume/cancel berpotensi memicu `startForegroundService` tanpa `startForeground` bila service sudah mati; FAB terus polling saat aplikasi di background. | Activity hanya mengandalkan `onBackPressed` lama; service memakai `startForegroundService` untuk semua aksi; updater FAB hanya berhenti saat view di-detach. | Menambah `OnBackPressedCallback`, guard service (`ensureForeground`/`stopSelf`), jeda polling berdasarkan window visibility, badge yang aman untuk font besar, dan margin RTL. | Compile lokal `compileDebugJavaWithJavac` sukses; lint skill 0 findings; manifest/resource merge sukses. Build CI dipicu lewat push; uji perangkat manual oleh pengguna. | Semua entry point service dan lifecycle view harus punya jalur aman saat state sudah tidak valid. | `OnBackPressedCallback`, `startForegroundService`, `onWindowVisibilityChanged` | ⏳ CI BUILD • MANUAL TEST |
+
+### Fix #2 — UI Overhaul: Native Telegram-Style Broadcast Screens
+
+| Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-28 | `RPlusBroadcastActivity.java`, `RPlusPanelLauncher.java`, `AndroidManifest.xml` | Panel broadcast lama memakai drawer custom, warna ungu hardcoded, ikon berupa karakter teks, tombol ALL CAPS, dan pemilih tanggal bawaan Android sehingga tampilan tidak konsisten dengan Telegram dan terasa buggy. | UI dibangun manual tanpa `ActionBar` dan tanpa color key tema; logika tab blacklist bergantung pada indeks child yang rapuh; handle mengambang memakai corner radius tidak simetris. | Mengganti dengan layar penuh bergaya Telegram: `ActionBar` asli, warna dari `Theme`, card/row native, ikon drawable, bottom sheet jadwal Telegram, edge-to-edge dengan insets, empty state, serta perbaikan listener progres broadcast. Handle diubah menjadi FAB bulat dengan badge. | Compile lokal sukses (25m 21s); manifest/resource merge sukses; lint skill 0 findings untuk file R+. Build CI dipicu lewat push; uji perangkat manual oleh pengguna. | Gunakan komponen dan color key Telegram agar UI otomatis mengikuti tema, bukan warna hardcoded. | `ActionBar`, `Theme.getColor`, `WindowInsetsCompat`, `AlertsCreator` | ⏳ CI BUILD • MANUAL TEST |
+
 ### Fix #1 — Broadcast Module Compile Fix: Missing Dialog Date and Wrong Activity Import
 
 | Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |

@@ -108,12 +108,27 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
                     : "Tidak ada target atau pesan masih kosong");
             }
         } else if (ACTION_PAUSE.equals(action)) {
+            if (!manager.isRunning()) {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+            ensureForeground();
             manager.pause();
             updateNotification();
         } else if (ACTION_RESUME.equals(action)) {
+            if (!manager.isRunning()) {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+            ensureForeground();
             manager.resume();
             updateNotification();
         } else if (ACTION_CANCEL.equals(action)) {
+            if (!manager.isRunning()) {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+            ensureForeground();
             manager.cancel();
             updateNotification();
         }
