@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 
+import org.telegram.messenger.FileLog;
 import org.telegram.tgnet.TLRPC;
 
 import java.util.ArrayList;
@@ -36,10 +37,18 @@ public final class RPlusScheduleManager {
     }
 
     public static void rescheduleAll(Context context) {
-        for (int account : RPlusStore.getAccountsWithSchedules()) {
-            for (RPlusStore.RPlusSchedule schedule : RPlusStore.getSchedules(account)) {
-                setAlarm(context, account, schedule);
+        try {
+            for (int account : RPlusStore.getAccountsWithSchedules()) {
+                for (RPlusStore.RPlusSchedule schedule : RPlusStore.getSchedules(account)) {
+                    try {
+                        setAlarm(context, account, schedule);
+                    } catch (Throwable e) {
+                        FileLog.e(e);
+                    }
+                }
             }
+        } catch (Throwable e) {
+            FileLog.e(e);
         }
     }
 
@@ -49,7 +58,10 @@ public final class RPlusScheduleManager {
             return;
         }
         RPlusStore.removeSchedule(account, scheduleId);
-        RPlusBroadcastService.start(context, account, schedule.mode, schedule.text, schedule.entities);
+        if (!RPlusBroadcastService.start(context, account, schedule.mode, schedule.text, schedule.entities)) {
+            // Keep it so the next foreground app launch can retry instead of silently losing it.
+            RPlusStore.addSchedule(account, schedule);
+        }
     }
 
     private static void setAlarm(Context context, int account, RPlusStore.RPlusSchedule schedule) {
@@ -68,8 +80,13 @@ public final class RPlusScheduleManager {
             } else {
                 alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent);
             }
-        } catch (SecurityException ignored) {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent);
+        } catch (Throwable e) {
+            FileLog.e(e);
+            try {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent);
+            } catch (Throwable fallbackError) {
+                FileLog.e(fallbackError);
+            }
         }
     }
 

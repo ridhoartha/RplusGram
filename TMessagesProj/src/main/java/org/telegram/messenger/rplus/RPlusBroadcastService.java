@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.R;
 import org.telegram.ui.RPlusBroadcastActivity;
 
@@ -40,17 +41,24 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
     private boolean foregroundStarted;
     private boolean finalNotificationShown;
 
-    public static void start(Context context, int account, int mode, String text, String entities) {
+    public static boolean start(Context context, int account, int mode, String text, String entities) {
         Intent intent = new Intent(context, RPlusBroadcastService.class);
         intent.setAction(ACTION_START);
         intent.putExtra(EXTRA_ACCOUNT, account);
         intent.putExtra(EXTRA_MODE, mode);
         intent.putExtra(EXTRA_TEXT, text);
         intent.putExtra(EXTRA_ENTITIES, entities);
-        if (Build.VERSION.SDK_INT >= 26) {
-            context.startForegroundService(intent);
-        } else {
-            context.startService(intent);
+        try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+            return true;
+        } catch (Throwable e) {
+            FileLog.e(e);
+            notifyStartFailure(context, account, "Android membatasi layanan latar belakang. Buka R+ Gram dan mulai broadcast secara manual.");
+            return false;
         }
     }
 
@@ -70,10 +78,40 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
         Intent intent = new Intent(context, RPlusBroadcastService.class);
         intent.setAction(action);
         intent.putExtra(EXTRA_ACCOUNT, account);
-        if (Build.VERSION.SDK_INT >= 26) {
-            context.startForegroundService(intent);
-        } else {
-            context.startService(intent);
+        try {
+            if (Build.VERSION.SDK_INT >= 26) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+    }
+
+    private static void notifyStartFailure(Context context, int account, String message) {
+        try {
+            createChannel(context);
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.notification)
+                .setContentTitle("Broadcast tidak dimulai")
+                .setContentText(message)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
+                .setAutoCancel(true)
+                .setContentIntent(PendingIntent.getActivity(
+                    context,
+                    102,
+                    new Intent(context, RPlusBroadcastActivity.class)
+                        .putExtra(RPlusBroadcastActivity.EXTRA_ACCOUNT, account)
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                    PendingIntent.FLAG_UPDATE_CURRENT | pendingIntentFlags()
+                ));
+            NotificationManager notificationManager = (NotificationManager) context.getSystemService(NOTIFICATION_SERVICE);
+            if (notificationManager != null) {
+                notificationManager.notify(NOTIFICATION_ID + 3, builder.build());
+            }
+        } catch (Throwable e) {
+            FileLog.e(e);
         }
     }
 
@@ -100,9 +138,27 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
             int mode = intent.getIntExtra(EXTRA_MODE, RPlusStore.MODE_GCAST);
             String text = intent.getStringExtra(EXTRA_TEXT);
             String encodedEntities = intent.getStringExtra(EXTRA_ENTITIES);
+            if (manager.isRunning()) {
+                // A duplicate/scheduled start must never tear down the broadcast that is
+                // already running in this service instance.
+                ensureForeground();
+                postImmediateError(
+                    "Broadcast sudah berjalan",
+                    "Selesaikan atau batalkan broadcast aktif terlebih dahulu.",
+                    false
+                );
+                return START_NOT_STICKY;
+            }
             manager.addListener(this);
             ensureForeground();
-            if (!manager.start(mode, text, RPlusStore.decodeEntities(encodedEntities))) {
+            boolean started;
+            try {
+                started = manager.start(mode, text, RPlusStore.decodeEntities(encodedEntities));
+            } catch (Throwable e) {
+                FileLog.e(e);
+                started = false;
+            }
+            if (!started) {
                 postImmediateError("Broadcast tidak dapat dimulai", RPlusStore.isLimitLocked(account)
                     ? RPlusStore.getLimitReason(account)
                     : "Tidak ada target atau pesan masih kosong");
@@ -182,7 +238,9 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
             .setProgress(Math.max(1, snapshot.getTotal()), Math.min(snapshot.getIndex(), Math.max(1, snapshot.getTotal())), snapshot.getTotal() == 0);
 
         if (snapshot.isPaused()) {
-            builder.addAction(0, "Lanjutkan", serviceAction(ACTION_RESUME, 201));
+            if (!RPlusStore.isLimitLocked(currentAccount)) {
+                builder.addAction(0, "Lanjutkan", serviceAction(ACTION_RESUME, 201));
+            }
         } else {
             builder.addAction(0, "Jeda", serviceAction(ACTION_PAUSE, 202));
         }
@@ -260,16 +318,30 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
     }
 
     private void postImmediateError(String title, String message) {
+        postImmediateError(title, message, true);
+    }
+
+    private void postImmediateError(String title, String message, boolean stopService) {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.notification)
             .setContentTitle(title)
             .setContentText(message)
-            .setAutoCancel(true);
+            .setAutoCancel(true)
+            .setContentIntent(PendingIntent.getActivity(
+                this,
+                103,
+                new Intent(this, RPlusBroadcastActivity.class)
+                    .putExtra(RPlusBroadcastActivity.EXTRA_ACCOUNT, currentAccount)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT | pendingIntentFlags()
+            ));
         NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         notificationManager.notify(NOTIFICATION_ID + 2, builder.build());
-        stopForeground(true);
-        foregroundStarted = false;
-        stopSelf();
+        if (stopService) {
+            stopForeground(true);
+            foregroundStarted = false;
+            stopSelf();
+        }
     }
 
     @Override
@@ -286,11 +358,15 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
     }
 
     private void createChannel() {
+        createChannel(this);
+    }
+
+    private static void createChannel(Context context) {
         if (Build.VERSION.SDK_INT < 26) {
             return;
         }
-        NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (notificationManager.getNotificationChannel(CHANNEL_ID) == null) {
+        NotificationManager notificationManager = (NotificationManager) context.getSystemService(NOTIFICATION_SERVICE);
+        if (notificationManager != null && notificationManager.getNotificationChannel(CHANNEL_ID) == null) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "R+ Broadcast",
@@ -306,6 +382,10 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
     public void onDestroy() {
         if (manager != null) {
             manager.removeListener(this);
+        }
+        if (foregroundStarted) {
+            stopForeground(true);
+            foregroundStarted = false;
         }
         super.onDestroy();
     }

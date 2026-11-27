@@ -29,7 +29,8 @@ public final class RPlusBroadcastManager {
         void onBroadcastStateChanged(int account);
     }
 
-    private static final long TARGET_DELAY_MS = 2000L;
+    private static final long TARGET_DELAY_MS = 3000L;
+    private static final int TARGET_JITTER_MS = 2000;
     private static final long SPAM_GUARD_MS = 24L * 60L * 60L * 1000L;
     private static final RPlusBroadcastManager[] INSTANCES = new RPlusBroadcastManager[UserConfig.MAX_ACCOUNT_COUNT];
 
@@ -53,6 +54,9 @@ public final class RPlusBroadcastManager {
     private boolean paused;
     private boolean cancelRequested;
     private boolean limitPaused;
+    private boolean requestInFlight;
+    private boolean nextScheduled;
+    private int generation;
     private int mode;
     private int index;
     private int sent;
@@ -63,6 +67,8 @@ public final class RPlusBroadcastManager {
     private String text;
     private String currentTarget;
     private String pauseReason;
+    private int retryTargetIndex = -1;
+    private long retryRandomId;
 
     private RPlusBroadcastManager(int account) {
         currentAccount = account;
@@ -112,12 +118,17 @@ public final class RPlusBroadcastManager {
         this.failed = 0;
         this.startedAt = System.currentTimeMillis();
         this.finishedAt = 0;
+        generation++;
+        requestInFlight = false;
+        nextScheduled = false;
         this.running = true;
         this.paused = false;
         this.cancelRequested = false;
         this.limitPaused = false;
         this.pauseReason = null;
         this.currentTarget = null;
+        this.retryTargetIndex = -1;
+        this.retryRandomId = 0;
         failureReasons.clear();
         notifyListeners();
         sendNext();
@@ -127,8 +138,10 @@ public final class RPlusBroadcastManager {
     private void sendNext() {
         final int targetIndex;
         final RPlusTarget target;
+        final int runGeneration;
+        final long randomId;
         synchronized (this) {
-            if (!running || paused || cancelRequested) {
+            if (!running || paused || cancelRequested || requestInFlight) {
                 return;
             }
             if (index >= targets.size()) {
@@ -145,11 +158,21 @@ public final class RPlusBroadcastManager {
             targetIndex = index++;
             target = targets.get(targetIndex);
             currentTarget = target.name;
+            runGeneration = generation;
+            if (retryTargetIndex == targetIndex) {
+                randomId = retryRandomId;
+                retryTargetIndex = -1;
+            } else {
+                randomId = Utilities.random.nextLong();
+            }
             notifyListeners();
         }
 
         if (!ApplicationLoader.isNetworkOnline()) {
             synchronized (this) {
+                if (runGeneration != generation || !running) {
+                    return;
+                }
                 index = targetIndex;
                 currentTarget = null;
                 paused = true;
@@ -159,10 +182,15 @@ public final class RPlusBroadcastManager {
             return;
         }
 
-        MessagesController controller = MessagesController.getInstance(currentAccount);
-        TLRPC.InputPeer inputPeer = controller.getInputPeer(target.dialogId);
+        TLRPC.InputPeer inputPeer;
+        try {
+            inputPeer = MessagesController.getInstance(currentAccount).getInputPeer(target.dialogId);
+        } catch (Throwable e) {
+            FileLog.e(e);
+            inputPeer = null;
+        }
         if (inputPeer == null || inputPeer instanceof TLRPC.TL_inputPeerEmpty) {
-            recordFailure("Chat tidak tersedia");
+            recordFailure("Chat tidak tersedia", runGeneration);
             scheduleNext();
             return;
         }
@@ -170,71 +198,128 @@ public final class RPlusBroadcastManager {
         TLRPC.TL_messages_sendMessage request = new TLRPC.TL_messages_sendMessage();
         request.peer = inputPeer;
         request.message = text;
-        request.random_id = Utilities.random.nextLong();
-        request.background = true;
+        request.random_id = randomId;
         if (entities != null && !entities.isEmpty()) {
             request.entities = new ArrayList<>(entities);
             request.flags |= 8;
         }
 
-        ConnectionsManager.getInstance(currentAccount).sendRequest(request, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            if (error != null) {
-                handleSendError(error.text, target);
+        synchronized (this) {
+            if (runGeneration != generation || !running || cancelRequested) {
                 return;
             }
-            if (response instanceof TLRPC.Updates) {
-                try {
-                    MessagesController.getInstance(currentAccount).processUpdates((TLRPC.Updates) response, false);
-                } catch (Throwable e) {
-                    FileLog.e(e);
+            requestInFlight = true;
+        }
+        try {
+            ConnectionsManager.getInstance(currentAccount).sendRequest(request, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                synchronized (RPlusBroadcastManager.this) {
+                    if (runGeneration != generation || !running) {
+                        return;
+                    }
+                    requestInFlight = false;
+                }
+                if (error != null) {
+                    handleSendError(error, targetIndex, randomId, runGeneration);
+                    return;
+                }
+                if (response instanceof TLRPC.Updates) {
+                    try {
+                        MessagesController.getInstance(currentAccount).processUpdates((TLRPC.Updates) response, false);
+                    } catch (Throwable e) {
+                        FileLog.e(e);
+                    }
+                }
+                synchronized (RPlusBroadcastManager.this) {
+                    if (runGeneration != generation || !running) {
+                        return;
+                    }
+                    sent++;
+                    currentTarget = null;
+                }
+                notifyListeners();
+                scheduleNext();
+            }), null, ConnectionsManager.RequestFlagDoNotWaitFloodWait | ConnectionsManager.RequestFlagCanCompress | ConnectionsManager.RequestFlagInvokeAfter);
+        } catch (Throwable e) {
+            FileLog.e(e);
+            synchronized (this) {
+                if (runGeneration == generation) {
+                    requestInFlight = false;
                 }
             }
-            synchronized (RPlusBroadcastManager.this) {
-                sent++;
-                currentTarget = null;
-            }
-            notifyListeners();
+            recordFailure("Gagal mengirim", runGeneration);
             scheduleNext();
-        }), null, ConnectionsManager.RequestFlagDoNotWaitFloodWait | ConnectionsManager.RequestFlagCanCompress | ConnectionsManager.RequestFlagInvokeAfter);
+        }
     }
 
-    private void handleSendError(String error, RPlusTarget target) {
-        if (error == null) {
+    private void handleSendError(TLRPC.TL_error errorObject, int targetIndex, long randomId, int runGeneration) {
+        String error = errorObject != null ? errorObject.text : null;
+        final boolean transportError = errorObject == null
+            || errorObject.code < 0
+            || TextUtils.isEmpty(errorObject.text);
+        if (TextUtils.isEmpty(error)) {
             error = "UNKNOWN";
         }
-        if (error.startsWith("FLOOD_WAIT_")) {
-            int seconds = 60;
-            try {
-                seconds = Integer.parseInt(error.substring("FLOOD_WAIT_".length()));
-            } catch (Throwable ignore) {
+        final int floodSeconds = parseFloodWaitSeconds(error);
+        synchronized (this) {
+            if (runGeneration != generation || !running) {
+                return;
             }
-            synchronized (this) {
+            requestInFlight = false;
+            if (transportError) {
+                // Transport error/timeout: retry the same target with the same random_id
+                // instead of burning through the list or creating a duplicate.
+                index = targetIndex;
+                retryTargetIndex = targetIndex;
+                retryRandomId = randomId;
+                currentTarget = null;
+                paused = true;
+                pauseReason = "Koneksi terputus";
+                notifyListeners();
+                return;
+            }
+            if (floodSeconds >= 0) {
+                index = targetIndex;
+                retryTargetIndex = targetIndex;
+                retryRandomId = randomId;
                 currentTarget = null;
                 paused = true;
                 limitPaused = true;
-                pauseReason = "Telegram meminta jeda " + seconds + " detik";
-                RPlusStore.setLimitLock(currentAccount, System.currentTimeMillis() + seconds * 1000L, pauseReason);
+                pauseReason = "Telegram meminta jeda " + floodSeconds + " detik";
+                RPlusStore.setLimitLock(
+                    currentAccount,
+                    System.currentTimeMillis() + floodSeconds * 1000L,
+                    pauseReason
+                );
+                notifyListeners();
+                return;
             }
-            notifyListeners();
-            return;
-        }
-        if ("PEER_FLOOD".equals(error) || "USER_RESTRICTED".equals(error)) {
-            synchronized (this) {
+            if ("PEER_FLOOD".equals(error) || "USER_RESTRICTED".equals(error)) {
+                index = targetIndex;
+                retryTargetIndex = targetIndex;
+                retryRandomId = randomId;
                 currentTarget = null;
                 paused = true;
                 limitPaused = true;
                 pauseReason = "Akun terindikasi dibatasi Telegram";
-                RPlusStore.setLimitLock(currentAccount, System.currentTimeMillis() + SPAM_GUARD_MS, pauseReason);
+                RPlusStore.setLimitLock(
+                    currentAccount,
+                    System.currentTimeMillis() + SPAM_GUARD_MS,
+                    pauseReason
+                );
+                notifyListeners();
+                return;
             }
-            notifyListeners();
-            return;
         }
-        recordFailure(reasonForError(error));
+        recordFailure(reasonForError(error), runGeneration);
         scheduleNext();
     }
 
-    private void recordFailure(String reason) {
+    private void recordFailure(String reason, int runGeneration) {
         synchronized (this) {
+            if (runGeneration != generation || !running) {
+                return;
+            }
+            requestInFlight = false;
             failed++;
             currentTarget = null;
             Integer count = failureReasons.get(reason);
@@ -243,15 +328,45 @@ public final class RPlusBroadcastManager {
         notifyListeners();
     }
 
-    private void scheduleNext() {
-        AndroidUtilities.runOnUIThread(() -> {
-            synchronized (RPlusBroadcastManager.this) {
-                if (!running || paused || cancelRequested) {
-                    return;
+    private static int parseFloodWaitSeconds(String error) {
+        if (error == null) {
+            return -1;
+        }
+        final String[] prefixes = {"FLOOD_WAIT_", "FLOOD_PREMIUM_WAIT_"};
+        for (String prefix : prefixes) {
+            if (error.startsWith(prefix)) {
+                try {
+                    return Integer.parseInt(error.substring(prefix.length()));
+                } catch (Throwable ignore) {
+                    return -1;
                 }
             }
+        }
+        return -1;
+    }
+
+    private void scheduleNext() {
+        scheduleNext(TARGET_DELAY_MS + Utilities.random.nextInt(TARGET_JITTER_MS));
+    }
+
+    private void scheduleNext(long delay) {
+        final int runGeneration;
+        synchronized (this) {
+            if (!running || paused || cancelRequested || requestInFlight || nextScheduled) {
+                return;
+            }
+            nextScheduled = true;
+            runGeneration = generation;
+        }
+        AndroidUtilities.runOnUIThread(() -> {
+            synchronized (RPlusBroadcastManager.this) {
+                if (runGeneration != generation) {
+                    return;
+                }
+                nextScheduled = false;
+            }
             sendNext();
-        }, TARGET_DELAY_MS);
+        }, delay);
     }
 
     public synchronized void pause() {
@@ -275,7 +390,7 @@ public final class RPlusBroadcastManager {
         limitPaused = false;
         pauseReason = null;
         notifyListeners();
-        AndroidUtilities.runOnUIThread(this::sendNext);
+        scheduleNext(0);
     }
 
     public synchronized void cancel() {
@@ -296,7 +411,13 @@ public final class RPlusBroadcastManager {
             }
             running = false;
             paused = false;
+            cancelRequested = false;
             finishedAt = System.currentTimeMillis();
+            generation++;
+            requestInFlight = false;
+            nextScheduled = false;
+            retryTargetIndex = -1;
+            retryRandomId = 0;
             currentTarget = null;
             history = new RPlusStore.RPlusHistory();
             history.id = startedAt;
@@ -336,14 +457,27 @@ public final class RPlusBroadcastManager {
         if ("PEER_ID_INVALID".equals(error)) {
             return "Chat tidak tersedia";
         }
+        if (error.startsWith("SLOWMODE_WAIT_")) {
+            return "Slow mode aktif";
+        }
         return error;
     }
 
     public static TargetSnapshot buildTargets(int account, int mode) {
+        try {
+            return buildTargetsInternal(account, mode);
+        } catch (Throwable e) {
+            FileLog.e(e);
+            return new TargetSnapshot();
+        }
+    }
+
+    private static TargetSnapshot buildTargetsInternal(int account, int mode) {
         TargetSnapshot snapshot = new TargetSnapshot();
         ArrayList<TLRPC.Dialog> dialogs = new ArrayList<>(MessagesController.getInstance(account).getAllDialogs());
         Collections.sort(dialogs, (a, b) -> Integer.compare(b.last_message_date, a.last_message_date));
-        LongSparseArray<RPlusTarget> unique = new LongSparseArray<>();
+        LongSparseArray<RPlusTarget> seen = new LongSparseArray<>();
+        ArrayList<RPlusTarget> ordered = new ArrayList<>();
         long selfId = UserConfig.getInstance(account).getClientUserId();
 
         for (TLRPC.Dialog dialog : dialogs) {
@@ -367,12 +501,13 @@ public final class RPlusBroadcastManager {
                     snapshot.blacklisted++;
                     continue;
                 }
-                if (unique.get(dialogId) == null) {
+                if (seen.get(dialogId) == null) {
                     RPlusTarget target = new RPlusTarget();
                     target.dialogId = dialogId;
                     target.name = DialogObject.getDialogTitle(chat);
                     target.date = dialog.last_message_date;
-                    unique.put(dialogId, target);
+                    seen.put(dialogId, target);
+                    ordered.add(target);
                 }
             } else {
                 if (!DialogObject.isUserDialog(dialogId)) {
@@ -386,21 +521,24 @@ public final class RPlusBroadcastManager {
                     snapshot.blacklisted++;
                     continue;
                 }
-                if (unique.get(dialogId) == null) {
+                if (seen.get(dialogId) == null) {
                     RPlusTarget target = new RPlusTarget();
                     target.dialogId = dialogId;
                     target.name = UserObject.getUserName(user);
                     target.date = dialog.last_message_date;
-                    unique.put(dialogId, target);
+                    seen.put(dialogId, target);
+                    ordered.add(target);
                 }
             }
         }
 
-        for (int i = 0; i < unique.size(); i++) {
+        // Keep the recency order produced by the sort above. LongSparseArray would
+        // iterate by ascending id instead, which used to pick the wrong 500 users.
+        for (RPlusTarget target : ordered) {
             if (mode == RPlusStore.MODE_UCAST && snapshot.targets.size() >= 500) {
                 break;
             }
-            snapshot.targets.add(unique.valueAt(i));
+            snapshot.targets.add(target);
         }
         snapshot.totalDiscoverable = snapshot.targets.size() + snapshot.blacklisted + snapshot.unavailable;
         return snapshot;

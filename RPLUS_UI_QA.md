@@ -44,12 +44,18 @@ Centang setiap baris; jika gagal, catat perangkat, versi Android, dan langkah re
 - [ ] Draft terakhir termuat saat composer dibuka kembali.
 - [ ] Draft tersimpan otomatis saat keluar dari composer atau aplikasi di-background.
 - [ ] Tombol kalender **Jadwalkan** membuka bottom sheet jadwal Telegram (bukan DatePicker bawaan).
+- [ ] Di Android 12+, prompt izin alarm tepat waktu muncul; menolak izin memberi peringatan.
+- [ ] Setelah reboot atau update aplikasi, jadwal masih ada dan alarm dipulihkan.
 - [ ] Tanggal/waktu lampau ditolak dengan pesan.
 - [ ] Tombol **Mulai broadcast** tetap terlihat (sticky) saat konten di-scroll.
 - [ ] Keyboard tidak menutupi tombol aksi (API 23–36).
 - [ ] Tombol **Mulai broadcast** meminta konfirmasi risiko.
 - [ ] Setelah mulai, layar kembali ke Home dan kartu progress muncul.
 - [ ] Saat broadcast lain aktif, tombol mulai tidak bisa dipakai diam-diam.
+- [ ] Menekan Mulai saat broadcast lain aktif tidak menghentikan broadcast yang sedang berjalan.
+- [ ] Setelah jaringan putus, status menjadi "Koneksi terputus"; setelah kembali dan Lanjutkan, target yang sama di-retry tanpa duplikat.
+- [ ] Saat FLOOD_WAIT, tombol Lanjutkan berubah menjadi "Tunggu" dan aktif lagi setelah lock berakhir.
+- [ ] UCAST memakai 500 chat terbaru (bukan 500 ID terkecil).
 
 ## 5. Blacklist
 
@@ -82,6 +88,9 @@ Centang setiap baris; jika gagal, catat perangkat, versi Android, dan langkah re
 - [ ] Notifikasi selesai muncul setelah broadcast berakhir.
 - [ ] Menekan notifikasi membuka layar broadcast yang benar.
 - [ ] Broadcast tetap berjalan saat layar dimatikan (sesuai batasan OS).
+- [ ] Start ganda dari notifikasi/jadwal tidak menghentikan broadcast yang sedang aktif.
+- [ ] Notifikasi error bisa dibuka langsung ke layar R+.
+- [ ] Setelah service dihentikan paksa, tidak ada notifikasi foreground yang tertinggal.
 - [ ] Service berhenti dan notifikasi progress hilang setelah selesai/batal.
 
 ## 9. Regresi

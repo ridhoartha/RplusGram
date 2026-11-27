@@ -2,6 +2,7 @@ package org.telegram.messenger.rplus;
 
 import android.text.TextUtils;
 
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
@@ -60,7 +61,7 @@ public final class RPlusMessageAlerts implements NotificationCenter.Notification
                 MessagesStorage.getInstance(account).getStorageQueue().postRunnable(() -> {
                     TLRPC.Message replied = MessagesStorage.getInstance(account).getMessage(dialogId, replyToId);
                     if (replied != null && replied.out) {
-                        addAlert(account, dialogId, message, false, true);
+                        AndroidUtilities.runOnUIThread(() -> addAlert(account, dialogId, message, false, true));
                     }
                 });
             }

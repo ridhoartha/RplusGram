@@ -15,9 +15,11 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.rplus.RPlusBroadcastManager;
+import org.telegram.messenger.rplus.RPlusScheduleManager;
 import org.telegram.messenger.rplus.RPlusStore;
 import org.telegram.ui.Components.LayoutHelper;
 
@@ -36,6 +38,11 @@ public final class RPlusPanelLauncher {
     public static void attach(Activity activity, ViewGroup parent) {
         if (activity == null || parent == null || parent.findViewWithTag(TAG) != null) {
             return;
+        }
+        try {
+            RPlusScheduleManager.rescheduleAll(activity);
+        } catch (Throwable e) {
+            FileLog.e(e);
         }
 
         final TextView button = new TextView(activity);

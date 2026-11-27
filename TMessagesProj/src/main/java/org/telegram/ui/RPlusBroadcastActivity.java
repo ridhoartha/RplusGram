@@ -1,5 +1,6 @@
 package org.telegram.ui;
 
+import android.app.AlarmManager;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -7,12 +8,14 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -32,6 +35,7 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessagesController;
@@ -102,6 +106,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
     private TextView activeStatsView;
     private TextView pauseResumeButton;
     private LineProgressView activeProgressBar;
+    private final Runnable activeCardRefresh = this::updateActiveCardUi;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -224,6 +229,8 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
             && broadcastManager != null
             && broadcastManager.isRunning() != (activeCard != null)) {
             showScreen(SCREEN_HOME, false);
+        } else if (currentScreen == SCREEN_HOME && activeCard != null) {
+            updateActiveCardUi();
         }
     }
 
@@ -278,6 +285,9 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
     private void showScreen(int screen, boolean animate) {
         hideKeyboard();
         currentScreen = screen;
+        if (activeCard != null) {
+            activeCard.removeCallbacks(activeCardRefresh);
+        }
         contentContainer.removeAllViews();
         contentScroll = null;
         composer = null;
@@ -499,6 +509,10 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
             accent(),
             () -> {
                 if (broadcastManager.isPaused()) {
+                    if (RPlusStore.isLimitLocked(currentAccount)) {
+                        notifyMessage("Broadcast masih dikunci sementara", true);
+                        return;
+                    }
                     RPlusBroadcastService.resume(this, currentAccount);
                 } else {
                     RPlusBroadcastService.pause(this, currentAccount);
@@ -553,7 +567,22 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
                 + " · Dilewati " + broadcastManager.getSkipped());
         }
         if (pauseResumeButton != null) {
-            pauseResumeButton.setText(broadcastManager.isPaused() ? "Lanjutkan" : "Jeda");
+            boolean locked = RPlusStore.isLimitLocked(currentAccount);
+            pauseResumeButton.setEnabled(!locked);
+            pauseResumeButton.setAlpha(locked ? .5f : 1f);
+            pauseResumeButton.setText(locked
+                ? "Tunggu"
+                : (broadcastManager.isPaused() ? "Lanjutkan" : "Jeda"));
+            if (activeCard != null) {
+                activeCard.removeCallbacks(activeCardRefresh);
+                if (locked) {
+                    long remaining = Math.max(
+                        1000,
+                        RPlusStore.getLimitLockUntil(currentAccount) - System.currentTimeMillis() + 500
+                    );
+                    activeCard.postDelayed(activeCardRefresh, remaining);
+                }
+            }
         }
     }
 
@@ -874,6 +903,43 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
             showLimitDialog();
             return;
         }
+        if (!ensureExactAlarmPermission()) {
+            return;
+        }
+        openSchedulePicker();
+    }
+
+    private boolean ensureExactAlarmPermission() {
+        if (Build.VERSION.SDK_INT < 31) {
+            return true;
+        }
+        AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
+        if (alarmManager == null || alarmManager.canScheduleExactAlarms()) {
+            return true;
+        }
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Izinkan jadwal tepat waktu");
+        builder.setMessage("Android membatasi alarm latar belakang. Tanpa izin ini, broadcast "
+            + "terjadwal bisa terlambat atau gagal dimulai saat aplikasi ditutup.");
+        builder.setNegativeButton("Tetap jadwalkan", (dialog, which) -> openSchedulePicker());
+        builder.setPositiveButton("Buka pengaturan", (dialog, which) -> {
+            try {
+                startActivity(new Intent(
+                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                    Uri.parse("package:" + getPackageName())
+                ));
+            } catch (Throwable e) {
+                notifyMessage("Pengaturan alarm tidak tersedia di perangkat ini", true);
+            }
+        });
+        builder.show();
+        return false;
+    }
+
+    private void openSchedulePicker() {
+        if (composer == null) {
+            return;
+        }
         hideKeyboard();
         AlertsCreator.createScheduleDatePickerDialog(
             this,
@@ -937,6 +1003,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         builder.setMessage("Pesan akan dikirim ke " + snapshot.targets.size() + " " + unit + ".\n\n"
             + "Fitur ini dapat menyebabkan akun dibatasi, dibekukan, atau dihapus oleh Telegram. "
             + "Gunakan hanya pada chat yang Anda kelola atau penerima yang telah menyetujui. "
+            + "Pesan dikirim dengan jeda otomatis 3–5 detik untuk mengurangi risiko pembatasan. "
             + "Risiko penggunaan ditanggung pengguna.");
         builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
         builder.setPositiveButton("Mulai", (dialog, which) -> {
@@ -946,14 +1013,18 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
             String message = composer.getText().toString();
             ArrayList<TLRPC.MessageEntity> entities = collectEntities();
             RPlusStore.saveTemplate(currentAccount, composerMode, draftName(), message, entities);
-            RPlusBroadcastService.start(
+            boolean started = RPlusBroadcastService.start(
                 this,
                 currentAccount,
                 composerMode,
                 message,
                 RPlusStore.encodeEntities(entities)
             );
-            showScreen(SCREEN_HOME);
+            if (started) {
+                showScreen(SCREEN_HOME);
+            } else {
+                notifyMessage("Layanan broadcast tidak dapat dimulai", true);
+            }
         });
         builder.show();
     }
@@ -1662,13 +1733,17 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
 
     private void notifyMessage(CharSequence text, boolean error) {
         if (rootView != null && rootView.isAttachedToWindow()) {
-            BulletinFactory factory = BulletinFactory.of(rootView, null);
-            Bulletin bulletin = error
-                ? factory.createErrorBulletin(text)
-                : factory.createSuccessBulletin(text);
-            bulletin.show();
-        } else {
-            Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
+            try {
+                BulletinFactory factory = BulletinFactory.of(rootView, null);
+                Bulletin bulletin = error
+                    ? factory.createErrorBulletin(text)
+                    : factory.createSuccessBulletin(text);
+                bulletin.show();
+                return;
+            } catch (Throwable e) {
+                FileLog.e(e);
+            }
         }
+        Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
     }
 }

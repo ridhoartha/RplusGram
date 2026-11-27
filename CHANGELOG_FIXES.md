@@ -1,6 +1,12 @@
 # R+ Gram — Catatan Perbaikan
 
 <!-- ENTRI BARU DI BAWAH BARIS INI -->
+### Fix #4 — Broadcast Backend Hardening: Pipeline, Target Order, FGS and Exact Alarms
+
+| Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-28 | `RPlusBroadcastManager.java`, `RPlusBroadcastService.java`, `RPlusScheduleManager.java`, `RPlusScheduleReceiver.java`, `RPlusBootReceiver.java`, `RPlusMessageAlerts.java`, `RPlusBroadcastActivity.java`, `RPlusPanelLauncher.java`, `AndroidManifest.xml` | Antrean bisa berjalan ganda setelah pause/resume; callback run lama bisa mengubah statistik run baru; UCAST memilih 500 user berdasarkan ID, bukan chat terbaru; start ganda bisa mematikan broadcast aktif; jadwal gagal tanpa izin exact alarm; error jaringan menandai semua target gagal. | Pipeline hanya mengandalkan flag `paused`; `LongSparseArray` mengiterasi berdasarkan ID; `postImmediateError` selalu `stopSelf`; permission exact alarm tidak ada di manifest utama; error transport dianggap kegagalan permanen; alert reply fallback menulis dari storage thread. | Menambah generation token + `requestInFlight`/`nextScheduled`; memakai urutan hasil sort dialog; guard duplicate start; permission exact alarm + dialog pengaturan; retry target yang sama dengan `random_id` yang sama; pacing 3–5 detik; try/catch pada service/receiver/alarm/peer; pindah alert ke UI thread; reschedule saat app start/update. | Compile lokal sukses; lint skill 0 findings; manifest merge memuat `SCHEDULE_EXACT_ALARM`. Build CI dan uji perangkat manual pending. | Pipeline async harus punya identitas run dan satu pemilik jadwal; jangan mengandalkan urutan iterasi struktur data yang salah. | `requestInFlight`, `FLOOD_WAIT`, `SCHEDULE_EXACT_ALARM`, `random_id`, `MY_PACKAGE_REPLACED` | ⏳ CI BUILD • MANUAL TEST |
+
 ### Fix #3 — Broadcast Runtime Hardening: Predictive Back, Service Guard, FAB Lifecycle
 
 | Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
