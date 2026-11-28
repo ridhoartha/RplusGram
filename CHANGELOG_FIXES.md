@@ -1,6 +1,12 @@
 # R+ Gram — Catatan Perbaikan
 
 <!-- ENTRI BARU DI BAWAH BARIS INI -->
+### Fix #6 — GCAST Target Filter Aligned with Userbot `.gcast`
+
+| Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-28 | `RPlusBroadcastManager.java` | Daftar target GCAST kosong untuk grup yang sebenarnya bisa dikirimi. | Pre-filter `ChatObject.canSendPlain` terlalu ketat; userbot `.gcast` (Ultroid/Getter) tidak memfilter, tetapi mencoba kirim lalu mencatat error per chat. | Semua dialog grup yang masih diikuti dimasukkan; channel broadcast hanya jika punya hak post; kegagalan dicatat per target seperti userbot. | `compileDebugJavaWithJavac` sukses. Build CI berikutnya pending. | Untuk broadcast, attempt-and-count lebih benar daripada pre-filter hak kirim yang bisa false-negative. | `.gcast`, `canSendPlain`, `canPost`, target | ⏳ CI NEXT |
+
 ### Fix #5 — Swipe Handle, Channel Targets and Broadcast Diagnostics
 
 | Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |

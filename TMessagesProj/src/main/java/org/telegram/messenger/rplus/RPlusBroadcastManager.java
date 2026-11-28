@@ -483,10 +483,10 @@ public final class RPlusBroadcastManager {
                     snapshot.unavailable++;
                     continue;
                 }
-                boolean canWrite = ChatObject.isChannel(chat) && !chat.megagroup
-                    ? ChatObject.canPost(chat)
-                    : ChatObject.canSendPlain(chat);
-                if (!canWrite) {
+                // Userbot .gcast behavior: include every group dialog and let the send
+                // attempt decide. Pre-filtering with canSendPlain made valid groups
+                // disappear from the target list.
+                if (ChatObject.isChannel(chat) && !chat.megagroup && !ChatObject.canPost(chat)) {
                     snapshot.unavailable++;
                     continue;
                 }
