@@ -65,6 +65,8 @@ Centang setiap baris; jika gagal, catat perangkat, versi Android, dan langkah re
 - [ ] Setelah jaringan putus, status menjadi "Koneksi terputus"; setelah kembali dan Lanjutkan, target yang sama di-retry tanpa duplikat.
 - [ ] Saat FLOOD_WAIT, tombol Lanjutkan berubah menjadi "Tunggu" dan aktif lagi setelah lock berakhir.
 - [ ] Saat menunggu respons server >1,5 dtk, status menampilkan “menunggu respons server (n dtk)”.
+- [ ] Progress naik segera setelah response diterima, sebelum update server diproses.
+- [ ] Durasi kirim di log mendekati waktu network nyata, bukan tertahan antrean sync.
 - [ ] Log target menampilkan durasi kirim, misal `✓ Grup A (0.7 dtk)`.
 - [ ] Saat layar R+ dibuka, request tidak menggantung karena koneksi MTProto di-pause.
 - [ ] Broadcast tetap berjalan saat aplikasi ditinggalkan ke background.

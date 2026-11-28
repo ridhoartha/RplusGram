@@ -233,13 +233,6 @@ public final class RPlusBroadcastManager {
                     handleSendError(error, targetIndex, randomId, runGeneration);
                     return;
                 }
-                if (response instanceof TLRPC.Updates) {
-                    try {
-                        MessagesController.getInstance(currentAccount).processUpdates((TLRPC.Updates) response, false);
-                    } catch (Throwable e) {
-                        FileLog.e(e);
-                    }
-                }
                 synchronized (RPlusBroadcastManager.this) {
                     if (runGeneration != generation || !running) {
                         return;
@@ -256,8 +249,18 @@ public final class RPlusBroadcastManager {
                 }
                 FileLog.d("RPlus sent -> " + target.name);
                 notifyListeners();
+                // Schedule the next target before applying the server updates. Processing
+                // updates can be expensive on the UI thread and previously made progress
+                // look frozen even though the message had already been sent.
                 scheduleNext();
-            }), null, ConnectionsManager.RequestFlagDoNotWaitFloodWait | ConnectionsManager.RequestFlagCanCompress | ConnectionsManager.RequestFlagInvokeAfter);
+                if (response instanceof TLRPC.Updates) {
+                    try {
+                        MessagesController.getInstance(currentAccount).processUpdates((TLRPC.Updates) response, false);
+                    } catch (Throwable e) {
+                        FileLog.e(e);
+                    }
+                }
+            }), null, ConnectionsManager.RequestFlagDoNotWaitFloodWait | ConnectionsManager.RequestFlagCanCompress);
         } catch (Throwable e) {
             FileLog.e(e);
             synchronized (this) {

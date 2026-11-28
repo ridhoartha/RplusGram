@@ -1,6 +1,12 @@
 # R+ Gram — Catatan Perbaikan
 
 <!-- ENTRI BARU DI BAWAH BARIS INI -->
+### Fix #12 — Remove InvokeAfter Queueing and Update Progress Before Processing
+
+| Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-29 | `RPlusBroadcastManager.java` | Saat broadcast, request terasa menunggu server sangat lama dan progress seperti berhenti. | `RequestFlagInvokeAfter` membuat send menunggu request lain; `processUpdates` dijalankan sebelum `sent++`, sehingga UI menunggu pekerjaan UI-thread setelah pesan sudah terkirim. | Hapus `RequestFlagInvokeAfter`; naikkan progress dan jadwalkan target berikutnya **sebelum** `processUpdates`; update server diproses setelahnya. | `compileDebugJavaWithJavac` sukses. Build CI berikutnya pending. | Pisahkan latensi jaringan dari biaya pemrosesan update; progress harus naik begitu response diterima. | `RequestFlagInvokeAfter`, `processUpdates`, `scheduleNext` | ⏳ CI NEXT |
+
 ### Fix #11 — Login Blocked by Published Dummy API ID
 
 | Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
