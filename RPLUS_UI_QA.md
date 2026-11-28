@@ -61,6 +61,10 @@ Centang setiap baris; jika gagal, catat perangkat, versi Android, dan langkah re
 - [ ] Menekan Mulai saat broadcast lain aktif tidak menghentikan broadcast yang sedang berjalan.
 - [ ] Setelah jaringan putus, status menjadi "Koneksi terputus"; setelah kembali dan Lanjutkan, target yang sama di-retry tanpa duplikat.
 - [ ] Saat FLOOD_WAIT, tombol Lanjutkan berubah menjadi "Tunggu" dan aktif lagi setelah lock berakhir.
+- [ ] Saat menunggu respons server >1,5 dtk, status menampilkan “menunggu respons server (n dtk)”.
+- [ ] Saat FLOOD_WAIT/PEER_FLOOD, muncul Bulletin dan countdown “coba lagi dalam mm:ss”.
+- [ ] Tombol pause berubah “Tunggu mm:ss” dan menghitung turun tiap detik.
+- [ ] Saat koneksi putus, muncul Bulletin “Koneksi terputus · broadcast dijeda”.
 - [ ] UCAST memakai 500 chat terbaru (bukan 500 ID terkecil).
 - [ ] Jika target 0, tombol **Muat ulang target** tersedia dan menghitung ulang.
 - [ ] Setelah start, jika service gagal, peringatan muncul dalam ±3 detik.

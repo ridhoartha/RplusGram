@@ -1,6 +1,12 @@
 # R+ Gram — Catatan Perbaikan
 
 <!-- ENTRI BARU DI BAWAH BARIS INI -->
+### Fix #8 — Visible Server Wait, FloodWait Countdown and Pause Notice
+
+| Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-28 | `RPlusBroadcastManager.java`, `RPlusBroadcastActivity.java` | Saat menunggu respons server atau kena FLOOD_WAIT, UI tidak menjelaskan kenapa broadcast berhenti; pengguna mengira macet. | `requestInFlight` tidak menyimpan waktu mulai; pause hanya alasan statis; tidak ada ticker countdown. | Menyimpan `requestStartedAt`; ticker 1 detik menampilkan “menunggu respons server (n dtk)”, countdown “coba lagi dalam mm:ss”, tombol “Tunggu mm:ss”, Bulletin saat limit/koneksi putus, dan teks notifikasi progres. | `compileDebugJavaWithJavac` sukses; lint 0 findings. Build CI berikutnya pending. | Setiap state tunggu harus punya penjelasan dan hitung mundur, bukan hanya berhenti diam. | `requestStartedAt`, `broadcastTicker`, `formatRemaining`, `FLOOD_WAIT` | ⏳ CI NEXT |
+
 ### Fix #7 — Per-Target Progress Log and Speed Presets
 
 | Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |

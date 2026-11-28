@@ -68,6 +68,7 @@ public final class RPlusBroadcastManager {
     private String pauseReason;
     private int retryTargetIndex = -1;
     private long retryRandomId;
+    private long requestStartedAt;
     private int completed;
     private String lastTargetName;
     private boolean lastTargetSuccess;
@@ -135,6 +136,7 @@ public final class RPlusBroadcastManager {
         this.currentTarget = null;
         this.retryTargetIndex = -1;
         this.retryRandomId = 0;
+        this.requestStartedAt = 0;
         this.completed = 0;
         this.lastTargetName = null;
         this.lastTargetSuccess = false;
@@ -209,6 +211,7 @@ public final class RPlusBroadcastManager {
                 return;
             }
             requestInFlight = true;
+            requestStartedAt = System.currentTimeMillis();
         }
         try {
             ConnectionsManager.getInstance(currentAccount).sendRequest(request, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
@@ -217,6 +220,7 @@ public final class RPlusBroadcastManager {
                         return;
                     }
                     requestInFlight = false;
+                    requestStartedAt = 0;
                 }
                 if (error != null) {
                     FileLog.d("RPlus error " + error.text + " -> " + target.name);
@@ -273,6 +277,7 @@ public final class RPlusBroadcastManager {
                 return;
             }
             requestInFlight = false;
+            requestStartedAt = 0;
             if (transportError) {
                 FileLog.d("RPlus transport error -> " + (errorObject != null ? errorObject.text : "null"));
                 // Transport error/timeout: retry the same target with the same random_id
@@ -344,6 +349,7 @@ public final class RPlusBroadcastManager {
                 return;
             }
             requestInFlight = false;
+            requestStartedAt = 0;
             failed++;
             completed++;
             lastTargetName = targetName;
@@ -469,6 +475,7 @@ public final class RPlusBroadcastManager {
             finishedAt = System.currentTimeMillis();
             generation++;
             requestInFlight = false;
+            requestStartedAt = 0;
             nextScheduled = false;
             retryTargetIndex = -1;
             retryRandomId = 0;
@@ -632,6 +639,10 @@ public final class RPlusBroadcastManager {
 
     public synchronized int getCompleted() {
         return completed;
+    }
+
+    public synchronized long getRequestStartedAt() {
+        return requestStartedAt;
     }
 
     public synchronized String getLastTarget() {

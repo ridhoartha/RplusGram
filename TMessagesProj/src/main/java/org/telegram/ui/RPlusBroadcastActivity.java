@@ -107,8 +107,26 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
     private TextView activeStatsView;
     private TextView activeLogView;
     private TextView pauseResumeButton;
+    private TextView limitCountdownView;
+    private String lastPauseNotice;
     private LineProgressView activeProgressBar;
     private final Runnable activeCardRefresh = this::updateActiveCardUi;
+    private final Runnable broadcastTicker = new Runnable() {
+        @Override
+        public void run() {
+            if (broadcastManager == null || contentContainer == null) {
+                return;
+            }
+            if (currentScreen == SCREEN_HOME && activeCard != null) {
+                updateActiveCardUi();
+            } else if (currentScreen == SCREEN_GCAST || currentScreen == SCREEN_UCAST) {
+                updateComposerCountdown();
+            }
+            if (broadcastManager.isRunning() || RPlusStore.isLimitLocked(currentAccount)) {
+                contentContainer.postDelayed(this, 1000);
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -234,10 +252,14 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         } else if (currentScreen == SCREEN_HOME && activeCard != null) {
             updateActiveCardUi();
         }
+        startBroadcastTicker();
     }
 
     @Override
     protected void onPause() {
+        if (contentContainer != null) {
+            contentContainer.removeCallbacks(broadcastTicker);
+        }
         saveDraftSilently();
         if (broadcastManager != null) {
             broadcastManager.removeListener(this);
@@ -278,6 +300,15 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         } else {
             updateActiveCardUi();
         }
+        maybeNotifyPause();
+        startBroadcastTicker();
+    }
+
+    private void startBroadcastTicker() {
+        if (contentContainer != null) {
+            contentContainer.removeCallbacks(broadcastTicker);
+            contentContainer.post(broadcastTicker);
+        }
     }
 
     private void showScreen(int screen) {
@@ -302,6 +333,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         activeStatsView = null;
         activeLogView = null;
         pauseResumeButton = null;
+        limitCountdownView = null;
         activeProgressBar = null;
 
         switch (screen) {
@@ -336,6 +368,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
             contentContainer.setAlpha(1f);
             contentContainer.setTranslationY(0f);
         }
+        startBroadcastTicker();
     }
 
     private void openComposer(int mode) {
@@ -566,9 +599,18 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
             String next = broadcastManager.getNextTarget();
             if (broadcastManager.isPaused()) {
                 String reason = broadcastManager.getPauseReason();
+                long remaining = RPlusStore.getLimitLockUntil(currentAccount) - System.currentTimeMillis();
                 state = TextUtils.isEmpty(reason) ? "Dijeda" : "Dijeda · " + reason;
+                if (remaining > 0) {
+                    state += " · coba lagi dalam " + formatRemaining(remaining);
+                }
             } else if (broadcastManager.getCurrentTarget() != null) {
-                state = "Mengirim ke " + broadcastManager.getCurrentTarget();
+                long started = broadcastManager.getRequestStartedAt();
+                long elapsed = started > 0 ? System.currentTimeMillis() - started : 0;
+                state = "Mengirim ke " + broadcastManager.getCurrentTarget()
+                    + (elapsed >= 1500
+                        ? " · menunggu respons server (" + (elapsed / 1000) + " dtk)"
+                        : "…");
             } else if (last != null) {
                 boolean success = broadcastManager.wasLastTargetSuccess();
                 state = (success ? "✓ " : "✗ ") + last
@@ -610,19 +652,20 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         }
         if (pauseResumeButton != null) {
             boolean locked = RPlusStore.isLimitLocked(currentAccount);
+            long remaining = RPlusStore.getLimitLockUntil(currentAccount) - System.currentTimeMillis();
             pauseResumeButton.setEnabled(!locked);
             pauseResumeButton.setAlpha(locked ? .5f : 1f);
             pauseResumeButton.setText(locked
-                ? "Tunggu"
+                ? "Tunggu " + formatRemaining(remaining)
                 : (broadcastManager.isPaused() ? "Lanjutkan" : "Jeda"));
             if (activeCard != null) {
                 activeCard.removeCallbacks(activeCardRefresh);
                 if (locked) {
-                    long remaining = Math.max(
+                    long refreshDelay = Math.max(
                         1000,
                         RPlusStore.getLimitLockUntil(currentAccount) - System.currentTimeMillis() + 500
                     );
-                    activeCard.postDelayed(activeCardRefresh, remaining);
+                    activeCard.postDelayed(activeCardRefresh, refreshDelay);
                 }
             }
         }
@@ -662,6 +705,10 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
                     : limitReason,
                 danger()
             ), fullWidth(top(12)));
+            limitCountdownView = text("", 12, danger());
+            limitCountdownView.setPadding(dp(4), dp(8), dp(4), 0);
+            body.addView(limitCountdownView, fullWidth(top(0)));
+            updateComposerCountdown();
         }
 
         body.addView(buildTargetCard(snapshot, isGroup), fullWidth(top(12)));
@@ -1763,6 +1810,57 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         }
         builder.setNegativeButton(LocaleController.getString(R.string.Close), null);
         builder.show();
+    }
+
+    private void updateComposerCountdown() {
+        if (limitCountdownView == null) {
+            return;
+        }
+        long remaining = RPlusStore.getLimitLockUntil(currentAccount) - System.currentTimeMillis();
+        if (remaining > 0) {
+            limitCountdownView.setText("Coba lagi dalam " + formatRemaining(remaining));
+            limitCountdownView.setVisibility(View.VISIBLE);
+        } else if (RPlusStore.isLimitLocked(currentAccount)) {
+            limitCountdownView.setText("Menyegarkan status…");
+        } else {
+            limitCountdownView.setText("Batas waktu habis. Tekan Mulai broadcast untuk mencoba lagi.");
+            limitCountdownView.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void maybeNotifyPause() {
+        String reason = broadcastManager.getPauseReason();
+        boolean paused = broadcastManager.isPaused();
+        boolean limit = RPlusStore.isLimitLocked(currentAccount) || broadcastManager.isLimitPaused();
+        boolean network = reason != null && reason.startsWith("Koneksi terputus");
+        if (paused && (limit || network)) {
+            String key = (limit ? "limit:" : "net:") + reason;
+            if (!key.equals(lastPauseNotice)) {
+                lastPauseNotice = key;
+                if (limit) {
+                    long remaining = RPlusStore.getLimitLockUntil(currentAccount) - System.currentTimeMillis();
+                    notifyMessage(
+                        "Telegram membatasi pengiriman · coba lagi dalam " + formatRemaining(remaining),
+                        true
+                    );
+                } else {
+                    notifyMessage("Koneksi terputus · broadcast dijeda", true);
+                }
+            }
+        } else if (!paused) {
+            lastPauseNotice = null;
+        }
+    }
+
+    private String formatRemaining(long millis) {
+        long total = Math.max(0, millis / 1000);
+        long hours = total / 3600;
+        long minutes = (total % 3600) / 60;
+        long seconds = total % 60;
+        if (hours > 0) {
+            return String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds);
+        }
+        return String.format(Locale.US, "%d:%02d", minutes, seconds);
     }
 
     private void hideKeyboard() {
