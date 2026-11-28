@@ -1,6 +1,12 @@
 # R+ Gram — Catatan Perbaikan
 
 <!-- ENTRI BARU DI BAWAH BARIS INI -->
+### Fix #10 — Visible Premium Sidebar Tab
+
+| Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-28 | `RPlusPanelLauncher.java` | Handle pembuka R+ hanya berupa garis ungu tipis sehingga tidak terlihat seperti sidebar dan sulit ditemukan. | Visual handle terlalu kecil (4×56dp), tanpa affordance geser. | Tab sidebar 40×156dp menempel di tepi kanan: gradient tema, border, elevation, grip line, chevron, ripple, badge status; tetap bisa drag/tap dan tanpa label R+. | `compileDebugJavaWithJavac` sukses. Build CI berikutnya pending. | Sidebar harus punya massa visual dan affordance, bukan sekadar garis. | `RPlusPanelLauncher`, `sidebar`, `chevron`, `grip` | ⏳ CI NEXT |
+
 ### Fix #9 — Paused MTProto Connection Made GCAST Look Like a Dead Server
 
 | Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |

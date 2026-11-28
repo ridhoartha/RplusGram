@@ -7,10 +7,12 @@ Centang setiap baris; jika gagal, catat perangkat, versi Android, dan langkah re
 
 - [ ] `./gradlew :TMessagesProj_App:assembleAfatDebug` berhasil tanpa error.
 - [ ] APK terpasang di perangkat/emulator.
-- [ ] Handle geser R+ muncul di tepi kanan setelah login (bukan tombol bulat).
-- [ ] Handle tidak muncul saat app lock aktif.
-- [ ] Tap handle membuka layar **R+ Gram / Pusat broadcast**.
-- [ ] Drag handle ke kiri membuka layar yang sama.
+- [ ] Tab sidebar R+ muncul di tepi kanan setelah login (bukan tombol bulat/garis tipis).
+- [ ] Tab terlihat jelas di tema terang dan gelap (gradient, border, shadow, chevron).
+- [ ] Tab tidak muncul saat app lock aktif.
+- [ ] Tap tab membuka layar **R+ Gram / Pusat broadcast**.
+- [ ] Drag tab ke kiri membuka layar yang sama.
+- [ ] Badge biru/merah muncul saat broadcast berjalan/ada pesan.
 - [ ] Tombol back ActionBar dan gesture back sama-sama berfungsi.
 
 ## 2. Tema & tampilan

@@ -2,33 +2,42 @@ package org.telegram.ui;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.rplus.RPlusBroadcastManager;
 import org.telegram.messenger.rplus.RPlusScheduleManager;
 import org.telegram.messenger.rplus.RPlusStore;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.LayoutHelper;
 
 /**
- * Slim right-edge handle for the R+ broadcast screen. Drag it to the left (or tap it)
- * instead of showing a floating circular button over the chat list.
+ * Right-edge drawer tab for the R+ broadcast screen. It is a visible, draggable
+ * tab rather than a floating circular button.
  */
 public final class RPlusPanelLauncher {
 
     private static final String TAG = "rplus_handle";
-    private static final int BRAND = 0xff7a4fe0;
+    private static final int BRAND_TOP = 0xff9a6bff;
+    private static final int BRAND_BOTTOM = 0xff6a3ed6;
     private static final int BADGE_ALERT = 0xffd92d43;
     private static final int BADGE_RUNNING = 0xff2f8fd8;
 
@@ -45,16 +54,70 @@ public final class RPlusPanelLauncher {
             FileLog.e(e);
         }
 
-        final View handle = new View(activity);
-        GradientDrawable handleBackground = new GradientDrawable();
-        handleBackground.setColor(BRAND);
-        handleBackground.setCornerRadius(dp(2));
-        handle.setBackground(handleBackground);
+        final FrameLayout tab = new FrameLayout(activity);
+        tab.setElevation(dp(10));
+
+        boolean dark = Theme.isCurrentThemeDark();
+        int tabTop = dark ? 0xff2b1d40 : 0xfff7f2ff;
+        int tabBottom = dark ? 0xff1f1530 : 0xffece2ff;
+        int stroke = dark ? 0x669a6bff : 0x449a6bff;
+        int contentColor = dark ? 0xffc4aaff : 0xff6f42d9;
+
+        GradientDrawable tabBackground = new GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            new int[]{tabTop, tabBottom}
+        );
+        tabBackground.setCornerRadii(new float[]{
+            dp(18), dp(18),
+            0, 0,
+            0, 0,
+            dp(18), dp(18)
+        });
+        tabBackground.setStroke(dp(1), stroke);
+        GradientDrawable tabMask = new GradientDrawable();
+        tabMask.setColor(Color.WHITE);
+        tabMask.setCornerRadii(new float[]{
+            dp(18), dp(18),
+            0, 0,
+            0, 0,
+            dp(18), dp(18)
+        });
+        tab.setBackground(new RippleDrawable(
+            ColorStateList.valueOf(0x339a6bff),
+            tabBackground,
+            tabMask
+        ));
+
+        View grip = new View(activity);
+        GradientDrawable gripBackground = new GradientDrawable();
+        gripBackground.setColor(contentColor);
+        gripBackground.setCornerRadius(dp(2));
+        grip.setBackground(gripBackground);
+        FrameLayout.LayoutParams gripParams = new FrameLayout.LayoutParams(
+            dp(3),
+            dp(44),
+            Gravity.LEFT | Gravity.CENTER_VERTICAL
+        );
+        gripParams.leftMargin = dp(7);
+        tab.addView(grip, gripParams);
+
+        ImageView chevron = new ImageView(activity);
+        chevron.setImageResource(R.drawable.ic_ab_back);
+        chevron.setColorFilter(contentColor);
+        chevron.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        FrameLayout.LayoutParams chevronParams = new FrameLayout.LayoutParams(
+            dp(22),
+            dp(22),
+            Gravity.CENTER
+        );
+        chevronParams.leftMargin = dp(4);
+        tab.addView(chevron, chevronParams);
 
         final View dot = new View(activity);
         GradientDrawable dotBackground = new GradientDrawable();
         dotBackground.setShape(GradientDrawable.OVAL);
         dotBackground.setColor(BADGE_ALERT);
+        dotBackground.setStroke(dp(1), 0xccffffff);
         dot.setBackground(dotBackground);
         dot.setVisibility(View.GONE);
 
@@ -79,7 +142,7 @@ public final class RPlusPanelLauncher {
                         if (manager.isRunning()) {
                             delay = 1000L;
                             int total = Math.max(manager.getTotal(), 0);
-                            int index = Math.min(manager.getIndex(), total);
+                            int index = Math.min(manager.getCompleted(), total);
                             ((GradientDrawable) dot.getBackground()).setColor(BADGE_RUNNING);
                             dot.setVisibility(View.VISIBLE);
                             setContentDescription("R+ Broadcast berjalan, " + index + " dari " + total
@@ -130,21 +193,20 @@ public final class RPlusPanelLauncher {
         container.setContentDescription("Geser ke kiri untuk membuka R+ Broadcast");
         container.setClickable(true);
 
-        FrameLayout.LayoutParams handleParams = new FrameLayout.LayoutParams(
-            dp(4),
-            dp(56),
+        FrameLayout.LayoutParams tabParams = new FrameLayout.LayoutParams(
+            dp(40),
+            dp(156),
             Gravity.RIGHT | Gravity.CENTER_VERTICAL
         );
-        handleParams.rightMargin = dp(1);
-        container.addView(handle, handleParams);
+        container.addView(tab, tabParams);
 
         FrameLayout.LayoutParams dotParams = new FrameLayout.LayoutParams(
-            dp(8),
-            dp(8),
+            dp(9),
+            dp(9),
             Gravity.RIGHT | Gravity.TOP
         );
-        dotParams.topMargin = dp(12);
-        dotParams.rightMargin = dp(4);
+        dotParams.topMargin = dp(8);
+        dotParams.rightMargin = dp(2);
         container.addView(dot, dotParams);
 
         final float[] downX = new float[1];
@@ -154,7 +216,7 @@ public final class RPlusPanelLauncher {
                 case MotionEvent.ACTION_DOWN:
                     downX[0] = event.getRawX();
                     moved[0] = false;
-                    handle.animate().cancel();
+                    tab.animate().cancel();
                     return true;
                 case MotionEvent.ACTION_MOVE: {
                     float dx = event.getRawX() - downX[0];
@@ -162,7 +224,7 @@ public final class RPlusPanelLauncher {
                         moved[0] = true;
                     }
                     if (dx < 0) {
-                        handle.setTranslationX(Math.max(dx, -dp(20)));
+                        tab.setTranslationX(Math.max(dx, -dp(20)));
                     }
                     return true;
                 }
@@ -170,7 +232,7 @@ public final class RPlusPanelLauncher {
                 case MotionEvent.ACTION_CANCEL: {
                     float dx = event.getRawX() - downX[0];
                     boolean open = moved[0] && dx < -dp(12);
-                    handle.animate().translationX(0).setDuration(120).start();
+                    tab.animate().translationX(0).setDuration(140).start();
                     if (open || (!moved[0] && event.getActionMasked() == MotionEvent.ACTION_UP)) {
                         v.performClick();
                     }
@@ -182,8 +244,8 @@ public final class RPlusPanelLauncher {
         container.setOnClickListener(v -> open(activity, v));
 
         parent.addView(container, LayoutHelper.createFrame(
-            48,
-            72,
+            64,
+            168,
             Gravity.RIGHT | Gravity.CENTER_VERTICAL,
             0,
             0,
@@ -199,8 +261,9 @@ public final class RPlusPanelLauncher {
             || !UserConfig.getInstance(account).isClientActivated()) {
             return;
         }
-        source.animate().scaleX(.96f).scaleY(.96f).setDuration(70).withEndAction(() -> {
-            source.animate().scaleX(1f).scaleY(1f).setDuration(100).start();
+        source.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+        source.animate().scaleX(.97f).scaleY(.97f).setDuration(70).withEndAction(() -> {
+            source.animate().scaleX(1f).scaleY(1f).setDuration(110).start();
             try {
                 activity.startActivity(new Intent(activity, RPlusBroadcastActivity.class)
                     .putExtra(RPlusBroadcastActivity.EXTRA_ACCOUNT, account)
