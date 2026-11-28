@@ -1,6 +1,12 @@
 # R+ Gram — Catatan Perbaikan
 
 <!-- ENTRI BARU DI BAWAH BARIS INI -->
+### Fix #9 — Paused MTProto Connection Made GCAST Look Like a Dead Server
+
+| Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-28 | `RPlusBroadcastActivity.java`, `RPlusBroadcastService.java`, `RPlusBroadcastManager.java` | GCAST terasa sangat lambat dan UI seperti mati; request server tidak kunjung selesai meski akun tidak kena limit. | Saat layar R+ dibuka, `LaunchActivity.onPause()` memanggil `setAppPaused(true)` sehingga koneksi MTProto di-pause; Activity/service R+ tidak pernah memanggil resume. | `resumeNetworkMaybe()` di `onResume` Activity dan `onStartCommand` service; pause kembali hanya saat tidak ada broadcast; cleanup di `onDestroy`; durasi request per target ditampilkan di status/log. | `compileDebugJavaWithJavac` sukses; lint 0 findings. Build CI berikutnya pending. | Request yang menggantung bisa berasal dari network state, bukan pacing atau server Telegram. | `resumeNetworkMaybe`, `setAppPaused`, `requestStartedAt`, `getLastSendDurationMs` | ⏳ CI NEXT |
+
 ### Fix #8 — Visible Server Wait, FloodWait Countdown and Pause Notice
 
 | Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |

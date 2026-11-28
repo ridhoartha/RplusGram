@@ -69,6 +69,7 @@ public final class RPlusBroadcastManager {
     private int retryTargetIndex = -1;
     private long retryRandomId;
     private long requestStartedAt;
+    private long lastSendDurationMs;
     private int completed;
     private String lastTargetName;
     private boolean lastTargetSuccess;
@@ -137,6 +138,7 @@ public final class RPlusBroadcastManager {
         this.retryTargetIndex = -1;
         this.retryRandomId = 0;
         this.requestStartedAt = 0;
+        this.lastSendDurationMs = 0;
         this.completed = 0;
         this.lastTargetName = null;
         this.lastTargetSuccess = false;
@@ -215,10 +217,14 @@ public final class RPlusBroadcastManager {
         }
         try {
             ConnectionsManager.getInstance(currentAccount).sendRequest(request, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                long durationMs;
                 synchronized (RPlusBroadcastManager.this) {
                     if (runGeneration != generation || !running) {
                         return;
                     }
+                    durationMs = requestStartedAt > 0
+                        ? System.currentTimeMillis() - requestStartedAt
+                        : 0;
                     requestInFlight = false;
                     requestStartedAt = 0;
                 }
@@ -240,12 +246,13 @@ public final class RPlusBroadcastManager {
                     }
                     sent++;
                     completed++;
+                    lastSendDurationMs = durationMs;
                     lastTargetName = target.name;
                     lastTargetSuccess = true;
                     lastFailureReason = null;
                     currentTarget = null;
                     nextTargetName = index < targets.size() ? targets.get(index).name : null;
-                    addRecentResult(target.name, true, null);
+                    addRecentResult(target.name, true, null, durationMs);
                 }
                 FileLog.d("RPlus sent -> " + target.name);
                 notifyListeners();
@@ -348,8 +355,12 @@ public final class RPlusBroadcastManager {
             if (runGeneration != generation || !running) {
                 return;
             }
+            long durationMs = requestStartedAt > 0
+                ? System.currentTimeMillis() - requestStartedAt
+                : 0;
             requestInFlight = false;
             requestStartedAt = 0;
+            lastSendDurationMs = durationMs;
             failed++;
             completed++;
             lastTargetName = targetName;
@@ -357,15 +368,15 @@ public final class RPlusBroadcastManager {
             lastFailureReason = reason;
             currentTarget = null;
             nextTargetName = index < targets.size() ? targets.get(index).name : null;
-            addRecentResult(targetName, false, reason);
+            addRecentResult(targetName, false, reason, durationMs);
             Integer count = failureReasons.get(reason);
             failureReasons.put(reason, count == null ? 1 : count + 1);
         }
         notifyListeners();
     }
 
-    private void addRecentResult(String name, boolean success, String reason) {
-        recentResults.add(0, new RPlusTargetResult(name, success, reason));
+    private void addRecentResult(String name, boolean success, String reason, long durationMs) {
+        recentResults.add(0, new RPlusTargetResult(name, success, reason, durationMs));
         while (recentResults.size() > MAX_RECENT_RESULTS) {
             recentResults.remove(recentResults.size() - 1);
         }
@@ -645,6 +656,10 @@ public final class RPlusBroadcastManager {
         return requestStartedAt;
     }
 
+    public synchronized long getLastSendDurationMs() {
+        return lastSendDurationMs;
+    }
+
     public synchronized String getLastTarget() {
         return lastTargetName;
     }
@@ -704,11 +719,13 @@ public final class RPlusBroadcastManager {
         public final String name;
         public final boolean success;
         public final String reason;
+        public final long durationMs;
 
-        RPlusTargetResult(String name, boolean success, String reason) {
+        RPlusTargetResult(String name, boolean success, String reason, long durationMs) {
             this.name = name;
             this.success = success;
             this.reason = reason;
+            this.durationMs = durationMs;
         }
     }
 

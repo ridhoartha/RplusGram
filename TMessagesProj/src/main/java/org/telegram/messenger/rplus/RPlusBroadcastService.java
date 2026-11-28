@@ -17,6 +17,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.R;
+import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.ui.RPlusBroadcastActivity;
 
 import java.util.LinkedHashMap;
@@ -133,6 +134,7 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
             return START_NOT_STICKY;
         }
         attachAccount(account);
+        ConnectionsManager.getInstance(account).resumeNetworkMaybe();
         String action = intent.getAction();
         if (ACTION_START.equals(action)) {
             int mode = intent.getIntExtra(EXTRA_MODE, RPlusStore.MODE_GCAST);
@@ -391,6 +393,12 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
         if (foregroundStarted) {
             stopForeground(true);
             foregroundStarted = false;
+        }
+        if (!RPlusBroadcastActivity.isVisible
+            && ApplicationLoader.mainInterfacePaused
+            && manager != null
+            && !manager.isRunning()) {
+            ConnectionsManager.getInstance(currentAccount).setAppPaused(true, false);
         }
         super.onDestroy();
     }

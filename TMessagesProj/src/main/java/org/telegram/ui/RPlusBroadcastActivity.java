@@ -35,6 +35,7 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
@@ -48,6 +49,7 @@ import org.telegram.messenger.rplus.RPlusBroadcastService;
 import org.telegram.messenger.rplus.RPlusMessageAlerts;
 import org.telegram.messenger.rplus.RPlusScheduleManager;
 import org.telegram.messenger.rplus.RPlusStore;
+import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -77,6 +79,7 @@ import java.util.Map;
 public class RPlusBroadcastActivity extends BasePermissionsActivity implements RPlusBroadcastManager.Listener {
 
     public static final String EXTRA_ACCOUNT = "rplus_account";
+    public static volatile boolean isVisible;
 
     private static final int SCREEN_HOME = 0;
     private static final int SCREEN_GCAST = 1;
@@ -242,6 +245,13 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
     @Override
     protected void onResume() {
         super.onResume();
+        isVisible = true;
+        if (UserConfig.isValidAccount(currentAccount)) {
+            // LaunchActivity pauses MTProto when it is covered by this Activity.
+            // Without this the broadcast requests sit in the queue and look like
+            // an extremely slow server.
+            ConnectionsManager.getInstance(currentAccount).resumeNetworkMaybe();
+        }
         if (broadcastManager != null) {
             broadcastManager.addListener(this);
         }
@@ -257,10 +267,18 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
 
     @Override
     protected void onPause() {
+        isVisible = false;
         if (contentContainer != null) {
             contentContainer.removeCallbacks(broadcastTicker);
         }
         saveDraftSilently();
+        if (UserConfig.isValidAccount(currentAccount)
+            && (broadcastManager == null || !broadcastManager.isRunning())) {
+            ConnectionsManager.getInstance(currentAccount).setAppPaused(
+                ApplicationLoader.mainInterfacePaused,
+                false
+            );
+        }
         if (broadcastManager != null) {
             broadcastManager.removeListener(this);
         }
@@ -269,6 +287,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
 
     @Override
     protected void onDestroy() {
+        isVisible = false;
         if (broadcastManager != null) {
             broadcastManager.removeListener(this);
         }
@@ -613,8 +632,10 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
                         : "…");
             } else if (last != null) {
                 boolean success = broadcastManager.wasLastTargetSuccess();
+                long duration = broadcastManager.getLastSendDurationMs();
                 state = (success ? "✓ " : "✗ ") + last
-                    + (success ? " terkirim" : " gagal");
+                    + (success ? " terkirim" : " gagal")
+                    + (duration > 0 ? " (" + formatDuration(duration) + ")" : "");
                 String failure = broadcastManager.getLastFailureReason();
                 if (!success && !TextUtils.isEmpty(failure)) {
                     state += " — " + failure;
@@ -642,6 +663,9 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
                         log.append('\n');
                     }
                     log.append(result.success ? "✓ " : "✗ ").append(result.name);
+                    if (result.durationMs > 0) {
+                        log.append(" (").append(formatDuration(result.durationMs)).append(")");
+                    }
                     if (!result.success && !TextUtils.isEmpty(result.reason)) {
                         log.append(" — ").append(result.reason);
                     }
@@ -1850,6 +1874,10 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         } else if (!paused) {
             lastPauseNotice = null;
         }
+    }
+
+    private String formatDuration(long millis) {
+        return String.format(new Locale("id", "ID"), "%.1f dtk", millis / 1000f);
     }
 
     private String formatRemaining(long millis) {
