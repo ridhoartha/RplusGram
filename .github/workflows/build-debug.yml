@@ -109,6 +109,20 @@ jobs:
           java -version
           ./gradlew --version
 
+      - name: Verify API credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${RPLUS_API_ID:-}" || -z "${RPLUS_API_HASH:-}" ]]; then
+            echo "::error title=API credentials::RPLUS_API_ID dan RPLUS_API_HASH belum diisi di repository secrets."
+            exit 1
+          fi
+          if [[ ! "${RPLUS_API_ID}" =~ ^[0-9]+$ ]]; then
+            echo "::error title=API credentials::RPLUS_API_ID harus berupa angka."
+            exit 1
+          fi
+          echo "API credentials: configured."
+
       - name: Build debug APK
         shell: bash
         run: |
