@@ -28,8 +28,8 @@ public final class RPlusBroadcastManager {
         void onBroadcastStateChanged(int account);
     }
 
-    private static final long TARGET_DELAY_MS = 3000L;
-    private static final int TARGET_JITTER_MS = 2000;
+    private static final long TARGET_DELAY_MS = 2000L;
+    private static final int TARGET_JITTER_MS = 1500;
     private static final long SPAM_GUARD_MS = 24L * 60L * 60L * 1000L;
     private static final RPlusBroadcastManager[] INSTANCES = new RPlusBroadcastManager[UserConfig.MAX_ACCOUNT_COUNT];
 
@@ -68,6 +68,13 @@ public final class RPlusBroadcastManager {
     private String pauseReason;
     private int retryTargetIndex = -1;
     private long retryRandomId;
+    private int completed;
+    private String lastTargetName;
+    private boolean lastTargetSuccess;
+    private String lastFailureReason;
+    private String nextTargetName;
+    private final ArrayList<RPlusTargetResult> recentResults = new ArrayList<>();
+    private static final int MAX_RECENT_RESULTS = 4;
 
     private RPlusBroadcastManager(int account) {
         currentAccount = account;
@@ -128,6 +135,12 @@ public final class RPlusBroadcastManager {
         this.currentTarget = null;
         this.retryTargetIndex = -1;
         this.retryRandomId = 0;
+        this.completed = 0;
+        this.lastTargetName = null;
+        this.lastTargetSuccess = false;
+        this.lastFailureReason = null;
+        this.nextTargetName = null;
+        recentResults.clear();
         failureReasons.clear();
         notifyListeners();
         sendNext();
@@ -157,6 +170,7 @@ public final class RPlusBroadcastManager {
             targetIndex = index++;
             target = targets.get(targetIndex);
             currentTarget = target.name;
+            nextTargetName = null;
             runGeneration = generation;
             if (retryTargetIndex == targetIndex) {
                 randomId = retryRandomId;
@@ -175,7 +189,7 @@ public final class RPlusBroadcastManager {
             inputPeer = null;
         }
         if (inputPeer == null || inputPeer instanceof TLRPC.TL_inputPeerEmpty) {
-            recordFailure("Chat tidak tersedia", runGeneration);
+            recordFailure("Chat tidak tersedia", target.name, runGeneration);
             scheduleNext();
             return;
         }
@@ -221,7 +235,13 @@ public final class RPlusBroadcastManager {
                         return;
                     }
                     sent++;
+                    completed++;
+                    lastTargetName = target.name;
+                    lastTargetSuccess = true;
+                    lastFailureReason = null;
                     currentTarget = null;
+                    nextTargetName = index < targets.size() ? targets.get(index).name : null;
+                    addRecentResult(target.name, true, null);
                 }
                 FileLog.d("RPlus sent -> " + target.name);
                 notifyListeners();
@@ -234,7 +254,7 @@ public final class RPlusBroadcastManager {
                     requestInFlight = false;
                 }
             }
-            recordFailure("Gagal mengirim", runGeneration);
+            recordFailure("Gagal mengirim", target.name, runGeneration);
             scheduleNext();
         }
     }
@@ -271,6 +291,9 @@ public final class RPlusBroadcastManager {
                 retryTargetIndex = targetIndex;
                 retryRandomId = randomId;
                 currentTarget = null;
+                nextTargetName = targetIndex >= 0 && targetIndex < targets.size()
+                    ? targets.get(targetIndex).name
+                    : null;
                 paused = true;
                 limitPaused = true;
                 pauseReason = "Telegram meminta jeda " + floodSeconds + " detik";
@@ -287,6 +310,9 @@ public final class RPlusBroadcastManager {
                 retryTargetIndex = targetIndex;
                 retryRandomId = randomId;
                 currentTarget = null;
+                nextTargetName = targetIndex >= 0 && targetIndex < targets.size()
+                    ? targets.get(targetIndex).name
+                    : null;
                 paused = true;
                 limitPaused = true;
                 pauseReason = "Akun terindikasi dibatasi Telegram";
@@ -299,22 +325,44 @@ public final class RPlusBroadcastManager {
                 return;
             }
         }
-        recordFailure(reasonForError(error), runGeneration);
+        String failedName;
+        synchronized (this) {
+            failedName = targetIndex >= 0 && targetIndex < targets.size()
+                ? targets.get(targetIndex).name
+                : "Chat";
+            if (runGeneration != generation || !running) {
+                return;
+            }
+        }
+        recordFailure(reasonForError(error), failedName, runGeneration);
         scheduleNext();
     }
 
-    private void recordFailure(String reason, int runGeneration) {
+    private void recordFailure(String reason, String targetName, int runGeneration) {
         synchronized (this) {
             if (runGeneration != generation || !running) {
                 return;
             }
             requestInFlight = false;
             failed++;
+            completed++;
+            lastTargetName = targetName;
+            lastTargetSuccess = false;
+            lastFailureReason = reason;
             currentTarget = null;
+            nextTargetName = index < targets.size() ? targets.get(index).name : null;
+            addRecentResult(targetName, false, reason);
             Integer count = failureReasons.get(reason);
             failureReasons.put(reason, count == null ? 1 : count + 1);
         }
         notifyListeners();
+    }
+
+    private void addRecentResult(String name, boolean success, String reason) {
+        recentResults.add(0, new RPlusTargetResult(name, success, reason));
+        while (recentResults.size() > MAX_RECENT_RESULTS) {
+            recentResults.remove(recentResults.size() - 1);
+        }
     }
 
     private static int parseFloodWaitSeconds(String error) {
@@ -335,7 +383,24 @@ public final class RPlusBroadcastManager {
     }
 
     private void scheduleNext() {
-        scheduleNext(TARGET_DELAY_MS + Utilities.random.nextInt(TARGET_JITTER_MS));
+        long base;
+        int jitter;
+        switch (RPlusStore.getDelayMode(currentAccount)) {
+            case RPlusStore.DELAY_FAST:
+                base = 800L;
+                jitter = 700;
+                break;
+            case RPlusStore.DELAY_SAFE:
+                base = 3500L;
+                jitter = 2000;
+                break;
+            case RPlusStore.DELAY_NORMAL:
+            default:
+                base = TARGET_DELAY_MS;
+                jitter = TARGET_JITTER_MS;
+                break;
+        }
+        scheduleNext(base + Utilities.random.nextInt(jitter));
     }
 
     private void scheduleNext(long delay) {
@@ -565,6 +630,30 @@ public final class RPlusBroadcastManager {
         return sent;
     }
 
+    public synchronized int getCompleted() {
+        return completed;
+    }
+
+    public synchronized String getLastTarget() {
+        return lastTargetName;
+    }
+
+    public synchronized boolean wasLastTargetSuccess() {
+        return lastTargetSuccess;
+    }
+
+    public synchronized String getLastFailureReason() {
+        return lastFailureReason;
+    }
+
+    public synchronized String getNextTarget() {
+        return nextTargetName;
+    }
+
+    public synchronized ArrayList<RPlusTargetResult> getRecentResults() {
+        return new ArrayList<>(recentResults);
+    }
+
     public synchronized int getFailed() {
         return failed;
     }
@@ -590,13 +679,26 @@ public final class RPlusBroadcastManager {
     }
 
     public synchronized String getProgressText() {
-        return (mode == RPlusStore.MODE_GCAST ? "GCAST" : "UCAST") + " - " + Math.min(index, targets.size()) + "/" + targets.size();
+        return (mode == RPlusStore.MODE_GCAST ? "GCAST" : "UCAST")
+            + " - " + Math.min(completed, targets.size()) + "/" + targets.size();
     }
 
     public static final class RPlusTarget {
         public long dialogId;
         public String name;
         public int date;
+    }
+
+    public static final class RPlusTargetResult {
+        public final String name;
+        public final boolean success;
+        public final String reason;
+
+        RPlusTargetResult(String name, boolean success, String reason) {
+            this.name = name;
+            this.success = success;
+            this.reason = reason;
+        }
     }
 
     public static final class TargetSnapshot {

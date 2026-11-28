@@ -50,6 +50,10 @@ Centang setiap baris; jika gagal, catat perangkat, versi Android, dan langkah re
 - [ ] Setelah reboot atau update aplikasi, jadwal masih ada dan alarm dipulihkan.
 - [ ] Tanggal/waktu lampau ditolak dengan pesan.
 - [ ] Tombol **Mulai broadcast** tetap terlihat (sticky) saat konten di-scroll.
+- [ ] Progress menampilkan `x / y selesai`, status ✓/✗ target terakhir, dan “lanjut ke …”.
+- [ ] Log target terakhir menampilkan maksimal 4 baris ✓/✗.
+- [ ] Baris **Jeda antar-chat** bisa diganti Cepat / Normal / Aman.
+- [ ] Mode Cepat memberi peringatan risiko FLOOD_WAIT.
 - [ ] Keyboard tidak menutupi tombol aksi (API 23–36).
 - [ ] Tombol **Mulai broadcast** meminta konfirmasi risiko.
 - [ ] Setelah mulai, layar kembali ke Home dan kartu progress muncul.

@@ -105,6 +105,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
     private TextView activeStatusView;
     private TextView activeProgressView;
     private TextView activeStatsView;
+    private TextView activeLogView;
     private TextView pauseResumeButton;
     private LineProgressView activeProgressBar;
     private final Runnable activeCardRefresh = this::updateActiveCardUi;
@@ -299,6 +300,7 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         activeStatusView = null;
         activeProgressView = null;
         activeStatsView = null;
+        activeLogView = null;
         pauseResumeButton = null;
         activeProgressBar = null;
 
@@ -500,6 +502,14 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         activeStatsView.setPadding(0, dp(6), 0, 0);
         card.addView(activeStatsView);
 
+        activeLogView = text("", 12, color(Theme.key_windowBackgroundWhiteGrayText2));
+        activeLogView.setPadding(0, dp(8), 0, 0);
+        activeLogView.setLineSpacing(dp(2), 1f);
+        activeLogView.setMaxLines(6);
+        activeLogView.setEllipsize(TextUtils.TruncateAt.END);
+        activeLogView.setVisibility(View.GONE);
+        card.addView(activeLogView);
+
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.CENTER_VERTICAL);
@@ -542,21 +552,32 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
             return;
         }
         int total = Math.max(broadcastManager.getTotal(), 0);
-        int index = Math.min(broadcastManager.getIndex(), total);
+        int completed = Math.min(broadcastManager.getCompleted(), total);
         if (activeProgressView != null) {
-            activeProgressView.setText(index + " / " + total);
+            activeProgressView.setText(completed + " / " + total + " selesai");
         }
         if (activeProgressBar != null) {
-            activeProgressBar.setProgress(total <= 0 ? 0f : index / (float) total, true);
-            activeProgressBar.setContentDescription("Progres broadcast " + index + " dari " + total);
+            activeProgressBar.setProgress(total <= 0 ? 0f : completed / (float) total, true);
+            activeProgressBar.setContentDescription("Progres broadcast " + completed + " dari " + total);
         }
         if (activeStatusView != null) {
             String state;
+            String last = broadcastManager.getLastTarget();
+            String next = broadcastManager.getNextTarget();
             if (broadcastManager.isPaused()) {
                 String reason = broadcastManager.getPauseReason();
                 state = TextUtils.isEmpty(reason) ? "Dijeda" : "Dijeda · " + reason;
             } else if (broadcastManager.getCurrentTarget() != null) {
                 state = "Mengirim ke " + broadcastManager.getCurrentTarget();
+            } else if (last != null) {
+                boolean success = broadcastManager.wasLastTargetSuccess();
+                state = (success ? "✓ " : "✗ ") + last
+                    + (success ? " terkirim" : " gagal");
+                String failure = broadcastManager.getLastFailureReason();
+                if (!success && !TextUtils.isEmpty(failure)) {
+                    state += " — " + failure;
+                }
+                state += next != null ? " · lanjut ke " + next : " · selesai";
             } else {
                 state = "Menyiapkan target…";
             }
@@ -566,6 +587,26 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
             activeStatsView.setText("Terkirim " + broadcastManager.getSent()
                 + " · Gagal " + broadcastManager.getFailed()
                 + " · Dilewati " + broadcastManager.getSkipped());
+        }
+        if (activeLogView != null) {
+            ArrayList<RPlusBroadcastManager.RPlusTargetResult> results =
+                broadcastManager.getRecentResults();
+            if (results.isEmpty()) {
+                activeLogView.setVisibility(View.GONE);
+            } else {
+                StringBuilder log = new StringBuilder();
+                for (RPlusBroadcastManager.RPlusTargetResult result : results) {
+                    if (log.length() > 0) {
+                        log.append('\n');
+                    }
+                    log.append(result.success ? "✓ " : "✗ ").append(result.name);
+                    if (!result.success && !TextUtils.isEmpty(result.reason)) {
+                        log.append(" — ").append(result.reason);
+                    }
+                }
+                activeLogView.setText(log);
+                activeLogView.setVisibility(View.VISIBLE);
+            }
         }
         if (pauseResumeButton != null) {
             boolean locked = RPlusStore.isLimitLocked(currentAccount);
@@ -624,6 +665,32 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         }
 
         body.addView(buildTargetCard(snapshot, isGroup), fullWidth(top(12)));
+
+        addHeader(body, "Kecepatan");
+        LinearLayout speedCard = newCard();
+        speedCard.addView(buildRow(
+            R.drawable.msg_speed_medium,
+            "Jeda antar-chat",
+            delayModeLabel(),
+            null,
+            true,
+            () -> {
+                int next = (RPlusStore.getDelayMode(currentAccount) + 1) % 3;
+                RPlusStore.setDelayMode(currentAccount, next);
+                saveDraftSilently();
+                showScreen(currentScreen, false);
+            }
+        ));
+        body.addView(speedCard, fullWidth(top(0)));
+        TextView speedHint = text(
+            RPlusStore.getDelayMode(currentAccount) == RPlusStore.DELAY_FAST
+                ? "Mode cepat lebih berisiko terkena FLOOD_WAIT."
+                : "Jeda lebih lama mengurangi risiko pembatasan akun.",
+            12,
+            color(Theme.key_windowBackgroundWhiteGrayText2)
+        );
+        speedHint.setPadding(dp(4), dp(8), dp(4), 0);
+        body.addView(speedHint, fullWidth(top(0)));
 
         addHeader(body, "Pesan");
         body.addView(buildEditorCard(isGroup), fullWidth(top(0)));
@@ -950,6 +1017,18 @@ public class RPlusBroadcastActivity extends BasePermissionsActivity implements R
         });
         builder.show();
         return false;
+    }
+
+    private String delayModeLabel() {
+        switch (RPlusStore.getDelayMode(currentAccount)) {
+            case RPlusStore.DELAY_FAST:
+                return "Cepat · 0,8–1,5 detik";
+            case RPlusStore.DELAY_SAFE:
+                return "Aman · 3,5–5,5 detik";
+            case RPlusStore.DELAY_NORMAL:
+            default:
+                return "Normal · 2–3,5 detik";
+        }
     }
 
     private void openSchedulePicker() {

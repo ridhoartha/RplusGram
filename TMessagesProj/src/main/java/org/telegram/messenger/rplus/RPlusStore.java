@@ -25,6 +25,10 @@ public final class RPlusStore {
     public static final int MODE_GCAST = 1;
     public static final int MODE_UCAST = 2;
 
+    public static final int DELAY_FAST = 0;
+    public static final int DELAY_NORMAL = 1;
+    public static final int DELAY_SAFE = 2;
+
     private static final String PREFS_NAME = "rplus_broadcast";
     private static final int MAX_HISTORY = 100;
     private static final int MAX_ALERTS = 100;
@@ -220,6 +224,18 @@ public final class RPlusStore {
             }
         }
         return accounts;
+    }
+
+    public static int getDelayMode(int account) {
+        int mode = prefs().getInt(key(account, "delay_mode"), DELAY_NORMAL);
+        return mode < DELAY_FAST || mode > DELAY_SAFE ? DELAY_NORMAL : mode;
+    }
+
+    public static void setDelayMode(int account, int mode) {
+        if (mode < DELAY_FAST || mode > DELAY_SAFE) {
+            mode = DELAY_NORMAL;
+        }
+        prefs().edit().putInt(key(account, "delay_mode"), mode).apply();
     }
 
     public static long getLimitLockUntil(int account) {

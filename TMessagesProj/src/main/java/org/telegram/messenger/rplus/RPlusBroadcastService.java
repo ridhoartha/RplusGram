@@ -211,7 +211,12 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
         RPlusBroadcastManager snapshot = manager;
         String title = snapshot.getMode() == RPlusStore.MODE_GCAST ? "Gcast berjalan" : "Ucast berjalan";
         String text = snapshot.isRunning()
-            ? snapshot.getProgressText() + (snapshot.getCurrentTarget() != null ? " · " + snapshot.getCurrentTarget() : "")
+            ? snapshot.getProgressText() + (snapshot.getCurrentTarget() != null
+                ? " · Mengirim ke " + snapshot.getCurrentTarget()
+                : snapshot.getLastTarget() != null
+                    ? (snapshot.wasLastTargetSuccess() ? " · ✓ " : " · ✗ ") + snapshot.getLastTarget()
+                        + (snapshot.getNextTarget() != null ? ", lanjut " + snapshot.getNextTarget() : "")
+                    : "")
             : "Menyiapkan broadcast";
         if (snapshot.isPaused() && snapshot.getPauseReason() != null) {
             text = "Dijeda · " + snapshot.getPauseReason();
@@ -235,7 +240,7 @@ public class RPlusBroadcastService extends Service implements RPlusBroadcastMana
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setProgress(Math.max(1, snapshot.getTotal()), Math.min(snapshot.getIndex(), Math.max(1, snapshot.getTotal())), snapshot.getTotal() == 0);
+            .setProgress(Math.max(1, snapshot.getTotal()), Math.min(snapshot.getCompleted(), Math.max(1, snapshot.getTotal())), snapshot.getTotal() == 0);
 
         if (snapshot.isPaused()) {
             if (!RPlusStore.isLimitLocked(currentAccount)) {

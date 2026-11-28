@@ -1,6 +1,12 @@
 # R+ Gram — Catatan Perbaikan
 
 <!-- ENTRI BARU DI BAWAH BARIS INI -->
+### Fix #7 — Per-Target Progress Log and Speed Presets
+
+| Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-28 | `RPlusBroadcastManager.java`, `RPlusBroadcastActivity.java`, `RPlusBroadcastService.java`, `RPlusStore.java` | Progress hanya menampilkan kursor target dan sempat “Menyiapkan target…”; GCAST terasa lambat karena jeda tetap 3–5 detik. | Progress memakai `index` (kursor), bukan jumlah selesai; status tidak menyimpan target terakhir/berikutnya; delay hardcoded. | Progress memakai jumlah selesai, status “✓ X terkirim · lanjut ke Y”, log 4 target terakhir, notifikasi ikut; preset kecepatan Cepat 0,8–1,5 dtk / Normal 2–3,5 dtk / Aman 3,5–5,5 dtk. | `compileDebugJavaWithJavac` sukses. Build CI berikutnya pending. | Progress harus mencerminkan hasil per target, bukan posisi antrean; kecepatan harus bisa dipilih dengan peringatan risiko. | `getCompleted`, `RPlusTargetResult`, `delay_mode`, `DELAY_FAST` | ⏳ CI NEXT |
+
 ### Fix #6 — GCAST Target Filter Aligned with Userbot `.gcast`
 
 | Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
