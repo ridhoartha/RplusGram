@@ -7,6 +7,7 @@ Centang setiap baris; jika gagal, catat perangkat, versi Android, dan langkah re
 
 - [ ] `./gradlew :TMessagesProj_App:assembleAfatDebug` berhasil tanpa error.
 - [ ] APK terpasang di perangkat/emulator.
+- [ ] Login berhasil setelah `RPLUS_API_ID`/`RPLUS_API_HASH` diisi (bukan `API_ID_PUBLISHED_FLOOD`).
 - [ ] Tab sidebar R+ muncul di tepi kanan setelah login (bukan tombol bulat/garis tipis).
 - [ ] Tab terlihat jelas di tema terang dan gelap (gradient, border, shadow, chevron).
 - [ ] Tab tidak muncul saat app lock aktif.

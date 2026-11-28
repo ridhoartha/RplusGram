@@ -1,6 +1,12 @@
 # R+ Gram — Catatan Perbaikan
 
 <!-- ENTRI BARU DI BAWAH BARIS INI -->
+### Fix #11 — Login Blocked by Published Dummy API ID
+
+| Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |
+|---|---|---|---|---|---|---|---|---|
+| 2026-11-28 | `TMessagesProj/build.gradle`, `BuildVars.java`, `.github/workflows/build-debug.yml`, `RPLUS_LOGIN_SETUP.md` | Tidak bisa login akun di APK hasil build. | Build memakai `APP_ID=4` dan `APP_HASH` dummy bawaan repo Telegram; Telegram menolak dengan `API_ID_PUBLISHED_FLOOD`. | `RPLUS_API_ID`/`RPLUS_API_HASH` dibaca dari Gradle property/env, dimasukkan ke BuildConfig, BuildVars memakai nilai itu; workflow membaca GitHub Secrets; panduan setup ditambahkan. | `compileDebugJavaWithJavac` sukses dengan fallback dummy; build dengan kredensial asli menunggu secrets. | Kredensial API aplikasi harus milik sendiri dan tidak boleh di-commit ke repo publik. | `API_ID_PUBLISHED_FLOOD`, `RPLUS_API_ID`, `RPLUS_API_HASH`, `BuildConfig` | ⏳ MENUNGGU SECRETS |
+
 ### Fix #10 — Visible Premium Sidebar Tab
 
 | Tanggal | File | Masalah | Akar | Fix | Verifikasi | Pelajaran | Log Keyword | Deploy |

@@ -6,6 +6,10 @@ apply plugin: 'idea'
 
 def rplusFastDebug = project.hasProperty('rplusFastDebug') && project.property('rplusFastDebug').toString().toBoolean()
 
+def rplusApiIdRaw = (project.findProperty('RPLUS_API_ID') ?: System.getenv('RPLUS_API_ID') ?: '').toString().trim()
+def rplusApiHashRaw = (project.findProperty('RPLUS_API_HASH') ?: System.getenv('RPLUS_API_HASH') ?: '').toString().trim()
+def rplusApiId = rplusApiIdRaw ==~ /\d+/ ? rplusApiIdRaw.toInteger() : 0
+
 idea {
     module {
         excludeDirs += [
@@ -151,6 +155,9 @@ android {
         targetSdkVersion 36
 
         vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
+
+        buildConfigField "int", "RPLUS_API_ID", String.valueOf(rplusApiId)
+        buildConfigField "String", "RPLUS_API_HASH", "\"" + rplusApiHashRaw.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
         multiDexEnabled true
 

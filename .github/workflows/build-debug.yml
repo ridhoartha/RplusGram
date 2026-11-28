@@ -31,6 +31,8 @@ permissions:
 env:
   BUILD_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'arm64-v8a' }}
   PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release || false }}
+  RPLUS_API_ID: ${{ secrets.RPLUS_API_ID }}
+  RPLUS_API_HASH: ${{ secrets.RPLUS_API_HASH }}
   CCACHE_DIR: /home/runner/.ccache
   CCACHE_MAXSIZE: 2G
 
